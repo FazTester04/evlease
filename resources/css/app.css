@@ -1,0 +1,24 @@
+@import 'tailwindcss';
+
+@theme {
+    --color-sidebar: #f8fafc;
+    --color-sidebar-foreground: #020617;
+    --color-sidebar-primary: #0f172a;
+    --color-sidebar-primary-foreground: #f8fafc;
+    --color-sidebar-accent: #f1f5f9;
+    --color-sidebar-accent-foreground: #0f172a;
+    --color-sidebar-border: #e2e8f0;
+    --color-sidebar-ring: #2563eb;
+}
+
+/* Optional dark mode */
+.dark {
+    --color-sidebar: #0f172a;
+    --color-sidebar-foreground: #f8fafc;
+    --color-sidebar-primary: #2563eb;
+    --color-sidebar-primary-foreground: #ffffff;
+    --color-sidebar-accent: #1e293b;
+    --color-sidebar-accent-foreground: #f8fafc;
+    --color-sidebar-border: #334155;
+    --color-sidebar-ring: #2563eb;
+}
