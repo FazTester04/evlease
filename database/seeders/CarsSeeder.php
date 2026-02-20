@@ -2,7 +2,7 @@
 
 namespace Database\Seeders;
 
-use App\Enums\FuelType;
+
 use App\Models\Car;
 use Illuminate\Database\Seeder;
 use Illuminate\Support\Facades\DB;
@@ -337,7 +337,6 @@ class CarsSeeder extends Seeder
                 'mileage' => 16000,
                 'transmission' => 'automatic',
                 'seats' => 5,
-                'fuel_type' => FuelType::ELECTRIC,
                 'description' => 'All-electric sedan with autopilot and over-the-air updates.',
             ],
             [
