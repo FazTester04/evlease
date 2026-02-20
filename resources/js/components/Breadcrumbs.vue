@@ -1,18 +1,6 @@
 <script setup lang="ts">
-import {
-    Breadcrumb,
-    BreadcrumbItem,
-    BreadcrumbLink,
-    BreadcrumbList,
-    BreadcrumbPage,
-    BreadcrumbSeparator,
-} from '@/components/ui/breadcrumb';
 import { Link } from '@inertiajs/vue3';
-
-interface BreadcrumbItemType {
-    title: string;
-    href?: string;
-}
+import type { BreadcrumbItemType } from '@/types';
 
 defineProps<{
     breadcrumbs: BreadcrumbItemType[];
@@ -20,23 +8,13 @@ defineProps<{
 </script>
 
 <template>
-    <Breadcrumb>
-        <BreadcrumbList>
-            <template v-for="(item, index) in breadcrumbs" :key="index">
-                <BreadcrumbItem>
-                    <template v-if="index === breadcrumbs.length - 1">
-                        <BreadcrumbPage>{{ item.title }}</BreadcrumbPage>
-                    </template>
-                    <template v-else>
-                        <BreadcrumbLink as-child>
-                            <Link :href="item.href ?? '#'">{{
-                                item.title
-                            }}</Link>
-                        </BreadcrumbLink>
-                    </template>
-                </BreadcrumbItem>
-                <BreadcrumbSeparator v-if="index !== breadcrumbs.length - 1" />
-            </template>
-        </BreadcrumbList>
-    </Breadcrumb>
+    <nav class="flex items-center text-sm text-muted-foreground">
+        <template v-for="(item, index) in breadcrumbs" :key="index">
+            <span v-if="index > 0" class="mx-2">/</span>
+            <Link v-if="item.href" :href="item.href" class="hover:text-foreground">
+                {{ item.title }}
+            </Link>
+            <span v-else>{{ item.title }}</span>
+        </template>
+    </nav>
 </template>
