@@ -13,6 +13,7 @@ class LeasePayment extends Model
         'paid_date',
         'amount',
         'status',
+        'proof_path', // <-- add this
     ];
 
     protected $casts = [

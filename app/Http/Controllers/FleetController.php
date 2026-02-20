@@ -8,6 +8,9 @@ use App\Models\Document;
 use Illuminate\Http\Request;
 use Inertia\Inertia;
 use App\Models\User;
+use App\Models\LeasePayment;
+use Illuminate\Support\Facades\Storage;
+
 class FleetController extends Controller
 {
     /**
@@ -175,12 +178,37 @@ class FleetController extends Controller
                 ];
                 
             });
+
+            $payments = LeasePayment::with(['lease.car', 'lease.driver'])
+    ->orderBy('paid_date', 'desc')
+    ->get()
+    ->map(function ($payment) {
+        return [
+            'id' => $payment->id,
+            'lease_id' => $payment->lease_id,
+            'car' => $payment->lease->car ? [
+                'license_plate' => $payment->lease->car->license_plate,
+                'make' => $payment->lease->car->make,
+                'model' => $payment->lease->car->model,
+            ] : null,
+            'driver' => $payment->lease->driver ? [
+                'name' => $payment->lease->driver->name,
+                'driver_license' => $payment->lease->driver->driver_license,
+            ] : null,
+            'amount' => number_format($payment->amount, 2),
+            'paid_date' => $payment->paid_date?->format('m/d/Y'),
+            'due_date' => $payment->due_date?->format('m/d/Y'),
+            'status' => $payment->status,
+            'proof_url' => $payment->proof_path ? Storage::url($payment->proof_path) : null,
+        ];
+    });
        $drivers = User::drivers()->get(['id', 'name', 'driver_license']); 
  
             return Inertia::render('Fleet/Index', [
     'cars'      => $cars,
     'leases'    => $leases,
     'documents' => $documents,
+    'payments'  => $payments,
     'drivers'   => $drivers,   
     'filters'   => ['search' => $search],
 ]);

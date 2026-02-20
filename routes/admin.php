@@ -31,4 +31,5 @@ Route::middleware(['admin.auth', 'admin'])
 // Record payment
         Route::post('payments/record', [PaymentsController::class, 'record'])->name('payments.record');
         // ... other admin routes (reservations, clients, payments, reports, support) ...
+        Route::delete('payments/{payment}', [PaymentsController::class, 'destroy'])->name('payments.destroy');
     });
