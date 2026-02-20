@@ -15,11 +15,8 @@ class DatabaseSeeder extends Seeder
     {
 
         $this->call([
-            DemoUsersSeeder::class,
-            CarsSeeder::class,
-            ClientsSeeder::class,
-            ReservationsPaymentsSeeder::class,
-            TicketSeeder::class,
+             DemoUsersSeeder::class,   // if you need demo users
+        EvDashboardSeeder::class, 
         ]);
     }
 }
