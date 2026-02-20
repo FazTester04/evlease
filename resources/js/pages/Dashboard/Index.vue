@@ -82,7 +82,7 @@ const totalPayments = computed(() => {
                     <span class="text-sm text-gray-500 mt-1">Total vehicles leased</span>
                 </div>
                 <div class="bg-white rounded-lg shadow p-6 flex flex-col">
-                    <span class="text-3xl font-bold text-gray-900">${{ page.props.kpis.monthlyRevenue }}</span>
+                    <span class="text-3xl font-bold text-gray-900">RM{{ page.props.kpis.monthlyRevenue }}</span>
                     <span class="text-sm text-gray-500 mt-1">Monthly Revenue</span>
                 </div>
                 <div class="bg-white rounded-lg shadow p-6 flex flex-col">
@@ -196,7 +196,7 @@ const totalPayments = computed(() => {
                                         </span>
                                     </div>
                                     <p class="text-sm text-gray-500 mt-1">Driver: {{ item.driver_name }} ({{ item.driver_id }})</p>
-                                    <p class="text-sm text-gray-900 font-medium mt-1">${{ Number(item.amount).toFixed(0) }}</p>
+                                    <p class="text-sm text-gray-900 font-medium mt-1">RM{{ Number(item.amount).toFixed(0) }}</p>
                                     <div class="text-xs text-gray-400 mt-1">
                                         Payment due: {{ item.payment_due }} - 
                                         Last paid: {{ item.last_paid }}
