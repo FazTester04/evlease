@@ -8,7 +8,7 @@ deploy_job:
   image: centos:latest  # Using CentOS image
 
   script:
-    # Navigate to the application directory
+    # Navigate to the application 
     - cd /home/xpertsmy/public_html/evlease.xperts.my
 
     # Ensure there are no local changes before pulling the latest code
