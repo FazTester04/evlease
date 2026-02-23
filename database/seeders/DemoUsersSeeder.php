@@ -16,26 +16,15 @@ class DemoUsersSeeder extends Seeder
     {
         // Admin user
         User::query()->updateOrCreate(
-            ['email' => 'admin@example.com'],
+            ['email' => 'admin@xperts.my'],
             [
                 'name' => 'Admin User',
-                'password' => Hash::make('00000000'),
+                'password' => Hash::make('Xperts12345'),
                 'role' => UserRole::ADMIN,
                 'is_active' => true,
                 'email_verified_at' => now(),
             ]
         );
 
-        // Client user
-        User::query()->updateOrCreate(
-            ['email' => 'client@example.com'],
-            [
-                'name' => 'Client User',
-                'password' => Hash::make('00000000'),
-                'role' => UserRole::CLIENT,
-                'is_active' => true,
-                'email_verified_at' => now(),
-            ]
-        );
     }
 }

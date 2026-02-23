@@ -5,7 +5,6 @@ namespace App\Http\Controllers\Admin;
 use App\Http\Controllers\Controller;
 use App\Enums\CarColor;
 use App\Enums\CarStatus;
-use App\Enums\FuelType;
 use App\Models\Car;
 use Illuminate\Http\Request;
 use Illuminate\Validation\Rule;
@@ -81,7 +80,6 @@ class CarsController extends Controller
             'imageFiles' => [],
             'enums' => [
                 'colors' => CarColor::forFrontend(),
-                'fuelTypes' => FuelType::forFrontend(),
                 'statuses' => array_map(fn($status) => [
                     'value' => $status->value,
                     'label' => $status->label(),
@@ -132,7 +130,6 @@ class CarsController extends Controller
             'imageFiles' => $imageFiles,
             'enums' => [
                 'colors' => CarColor::forFrontend(),
-                'fuelTypes' => FuelType::forFrontend(),
                 'statuses' => array_map(fn($status) => [
                     'value' => $status->value,
                     'label' => $status->label(),
