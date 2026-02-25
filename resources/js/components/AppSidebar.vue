@@ -12,7 +12,7 @@ import {
 } from '@/components/ui/sidebar';
 import { type NavItem } from '@/types';
 import { Link } from '@inertiajs/vue3';
-import { BarChart, Car } from 'lucide-vue-next';
+import { BarChart, Car, FileText, CreditCard, Users, Wrench } from 'lucide-vue-next';
 import AppLogo from './AppLogo.vue';
 
 const mainNavItems: NavItem[] = [
@@ -22,10 +22,35 @@ const mainNavItems: NavItem[] = [
         icon: BarChart,
     },
     {
-        title: 'Vehicle Fleet',
-        href: '/admin/cars',
+        title: 'Vehicles',
+        href: '/admin/cars',  // was '/admin/cars'
         icon: Car,
     },
+    {
+        title: 'Leases',
+        href: '/admin/leases',    
+        icon: Car,
+    },
+    {
+        title: 'Payments',
+        href: '/admin/payments',
+        icon: CreditCard,
+    },
+    {
+        title: 'Drivers',
+        href: '/admin/drivers',
+        icon: Users,
+    },
+    {
+        title: 'Documents',
+        href: '/admin/documents',
+        icon: FileText,
+    },
+    //{
+       // title: 'Repairs',
+      //  href: '/admin/maintenance',
+      //  icon: Wrench,
+   // },
 ];
 </script>
 

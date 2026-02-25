@@ -16,7 +16,9 @@ Route::prefix('admin')->name('admin.')->group(function () {
 // Protected dashboard routes – only authenticated admins can access
 Route::middleware(['auth', 'admin'])->group(function () {
     Route::get('/ev-dashboard', [DashboardController::class, 'index'])->name('ev.dashboard');
+    
 });
+Route::get('/api/lease/{lease}/statement', [App\Http\Controllers\PaymentsController::class, 'statement'])->middleware('auth');
 
 // Include authentication routes (login, register, etc.)
 require __DIR__.'/auth.php';

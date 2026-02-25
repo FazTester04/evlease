@@ -14,6 +14,7 @@ class Lease extends Model
         'start_date',
         'end_date',
         'monthly_payment',
+        'down_payment',
         'status',
     ];
 
@@ -23,15 +24,15 @@ class Lease extends Model
         'monthly_payment' => 'decimal:2',
     ];
 
-    public function car(): BelongsTo
-    {
-        return $this->belongsTo(Car::class);
-    }
+  public function car()
+{
+    return $this->belongsTo(Car::class);
+}
 
-    public function driver(): BelongsTo
-    {
-        return $this->belongsTo(User::class, 'driver_id');
-    }
+public function driver()
+{
+    return $this->belongsTo(User::class, 'driver_id');
+}
 
     public function payments(): HasMany
     {

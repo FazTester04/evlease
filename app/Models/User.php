@@ -2,7 +2,6 @@
 
 namespace App\Models;
 
-// use Illuminate\Contracts\Auth\MustVerifyEmail;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Foundation\Auth\User as Authenticatable;
 use App\Enums\UserRole;
@@ -12,7 +11,6 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
 
 class User extends Authenticatable
 {
-    /** @use HasFactory<\Database\Factories\UserFactory> */
     use HasFactory, Notifiable, TwoFactorAuthenticatable;
 
     /**
@@ -26,7 +24,10 @@ class User extends Authenticatable
         'password',
         'role',
         'is_active',
-        'driver_license', // Added for EV leasing system
+        'driver_license',
+        'phone',
+        'date_of_birth',
+        'address',
     ];
 
     /**
@@ -51,45 +52,14 @@ class User extends Authenticatable
             'password' => 'hashed',
             'role' => UserRole::class,
             'is_active' => 'boolean',
-            'driver_license' => 'string', // Added for EV leasing system
+            'driver_license' => 'string',
+            'date_of_birth' => 'date',
         ];
-    }
-
-    /**
-     * Get the reservations for the user.
-     */
-    public function reservations(): HasMany
-    {
-        return $this->hasMany(Reservation::class);
-    }
-
-    /**
-     * Get the payments for the user.
-     */
-    public function payments(): HasMany
-    {
-        return $this->hasMany(Payment::class);
-    }
-
-    /**
-     * Get the tickets created by the user.
-     */
-    public function tickets(): HasMany
-    {
-        return $this->hasMany(Ticket::class);
-    }
-
-    /**
-     * Get the messages sent by the user.
-     */
-    public function messages(): HasMany
-    {
-        return $this->hasMany(Message::class);
     }
 
     /*
     |--------------------------------------------------------------------------
-    | EV Leasing System Relationships & Scopes
+    | Relationships
     |--------------------------------------------------------------------------
     */
 
@@ -108,6 +78,42 @@ class User extends Authenticatable
     {
         return $this->hasMany(Document::class, 'driver_id');
     }
+
+    /**
+     * Get the payments made by this user (if any).
+     */
+    public function payments(): HasMany
+    {
+        return $this->hasMany(LeasePayment::class);
+    }
+
+    /*
+    |--------------------------------------------------------------------------
+    | Accessors
+    |--------------------------------------------------------------------------
+    */
+
+    /**
+     * Get the active lease for this driver.
+     */
+    public function getActiveLeaseAttribute()
+    {
+        return $this->leases()->where('status', 'active')->first();
+    }
+
+    /**
+     * Get the driver's license document.
+     */
+    public function getLicenseDocumentAttribute()
+    {
+        return $this->documents()->where('type', 'driver_license')->first();
+    }
+
+    /*
+    |--------------------------------------------------------------------------
+    | Scopes
+    |--------------------------------------------------------------------------
+    */
 
     /**
      * Scope a query to only include users with the driver role.

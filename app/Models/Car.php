@@ -9,6 +9,8 @@ use Illuminate\Database\Eloquent\SoftDeletes;
 use Illuminate\Support\Facades\Storage;
 use MohamedGaldi\ViltFilepond\Traits\HasFiles;
 use Illuminate\Database\Eloquent\Relations\HasMany;
+use Illuminate\Database\Eloquent\Relations\HasOne;
+use Illuminate\Database\Eloquent\Relations\HasOneThrough;
 
 class Car extends Model
 {
@@ -59,6 +61,7 @@ class Car extends Model
         'service_status',
         'next_payment_due',
         'next_service_date',
+         'active_lease_id',
     ];
 
     /**
@@ -116,11 +119,32 @@ class Car extends Model
     }
 
     /**
-     * Get the active lease (most recent active lease).
+     * Get the active lease (most recent active lease) as a model instance.
+     * (Not a relationship – returns a model or null)
      */
     public function activeLease()
     {
         return $this->leases()->where('status', 'active')->latest('start_date')->first();
+    }
+ public function getActiveLeaseIdAttribute()
+{
+    $lease = $this->leases()->where('status', 'active')->first();
+    return $lease?->id;
+}
+    /**
+     * Relationship: the driver of the current active lease (via the lease).
+     * This can be eager loaded.
+     */
+    public function currentDriver(): HasOneThrough
+    {
+        return $this->hasOneThrough(
+            User::class,
+            Lease::class,
+            'car_id',          // Foreign key on Lease table
+            'id',              // Foreign key on User table
+            'id',              // Local key on Car table
+            'driver_id'        // Local key on Lease table
+        )->where('leases.status', 'active');
     }
 
     /**
@@ -129,6 +153,30 @@ class Car extends Model
     public function maintenanceServices(): HasMany
     {
         return $this->hasMany(MaintenanceService::class, 'car_id');
+    }
+
+    /**
+     * Get the road tax document for the car.
+     */
+    public function roadTax(): HasOne
+    {
+        return $this->hasOne(Document::class, 'car_id')->where('type', 'road_tax');
+    }
+
+    /**
+     * Get the insurance document for the car.
+     */
+    public function insurance(): HasOne
+    {
+        return $this->hasOne(Document::class, 'car_id')->where('type', 'insurance');
+    }
+
+    /**
+     * Get all documents for the car.
+     */
+    public function documents(): HasMany
+    {
+        return $this->hasMany(Document::class, 'car_id');
     }
 
     // ------------------------------------------------------------------------
@@ -140,8 +188,12 @@ class Car extends Model
      */
     public function getCurrentDriverAttribute()
     {
-        $lease = $this->activeLease();
-        return $lease?->driver;
+        // If the relation is already loaded, use it
+        if ($this->relationLoaded('currentDriver')) {
+            return $this->getRelation('currentDriver');
+        }
+        // Fallback: query the active lease's driver
+        return $this->activeLease()?->driver;
     }
 
     /**
@@ -232,8 +284,4 @@ class Car extends Model
 
         return $next?->scheduled_date;
     }
-    public function documents(): HasMany
-{
-    return $this->hasMany(Document::class, 'car_id');
-}
 }

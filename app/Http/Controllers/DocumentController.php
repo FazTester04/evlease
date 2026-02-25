@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers;
 
+use Inertia\Inertia;
 use App\Models\Document;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Storage;
@@ -71,4 +72,19 @@ class DocumentController extends Controller
 
         return redirect()->back()->with('success', 'Document deleted successfully.');
     }
+public function index()
+{
+    $documents = Document::with([
+        'car',                       // for car documents
+        'driver',                    // for driver documents
+        'leasePayment.lease.car',    // for payment receipts → car
+        'leasePayment.lease.driver', // for payment receipts → driver
+    ])
+    ->orderBy('created_at', 'desc')
+    ->get();
+
+    return Inertia::render('documents', [
+        'documents' => $documents,
+    ]);
+}
 }
