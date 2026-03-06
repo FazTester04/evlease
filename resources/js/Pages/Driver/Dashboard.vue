@@ -1,5 +1,5 @@
 <script setup>
-import DriverLayout from '@/Layouts/DriverLayout.vue';
+import DriverLayout from '@/layouts/DriverLayout.vue';
 import { Head, Link } from '@inertiajs/vue3';
 import { 
     Car, 
