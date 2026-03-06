@@ -9,7 +9,7 @@ deploy_job:
 
   script:
     # Navigate to the application directory
-    - cd /home/xpertsmy/public_html/xynapse.xperts.my
+    - cd /home/xpertsmy/public_html/evlease.xperts.my
 
     # Ensure there are no local changes before pulling the latest code
     - git reset --hard
