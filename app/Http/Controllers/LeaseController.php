@@ -5,77 +5,129 @@ namespace App\Http\Controllers;
 use Inertia\Inertia;
 use App\Models\Lease;
 use App\Models\Car;
-use App\Models\Driver;
 use App\Models\LeasePayment;
 use Illuminate\Http\Request;
 use App\Models\User;
+use App\Enums\UserRole;
 
 class LeaseController extends Controller
 {
     /**
+     * Display a listing of leases.
+     */
+    public function index(Request $request)
+    {
+        $leases = Lease::with('car', 'driver')
+            ->when($request->search, function ($query, $search) {
+                $query->whereHas('car', function ($q) use ($search) {
+                    $q->where('license_plate', 'like', "%{$search}%");
+                })->orWhereHas('driver', function ($q) use ($search) {
+                    $q->where('name', 'like', "%{$search}%");
+                });
+            })
+            ->orderBy('created_at', 'desc')
+            ->get();
+
+        // Cars that are physically available AND have no active lease
+        $availableCars = Car::where('status', 'available')
+            ->whereDoesntHave('leases', function ($q) {
+                $q->where('status', 'active');
+            })
+            ->get();
+
+        // Drivers with role driver AND no ongoing lease (active, paused, or pending)
+        $availableDrivers = User::where('role', UserRole::DRIVER)
+            ->whereDoesntHave('leases', function ($q) {
+                $q->whereIn('status', ['active', 'paused', 'pending']);
+            })
+            ->get();
+
+        return Inertia::render('leases', [
+            'leases' => $leases,
+            'cars'   => $availableCars,
+            'drivers' => $availableDrivers,
+            'filters' => $request->only('search'),
+        ]);
+    }
+
+    /**
      * Store a newly created lease.
      */
-   public function store(Request $request)
-{
-    $validated = $request->validate([
-        'car_id'          => 'required|exists:cars,id',
-        'driver_id'       => 'required|exists:users,id',
-        'start_date'      => 'required|date',
-        'end_date'        => 'nullable|date|after:start_date',
-        'monthly_payment' => 'required|numeric|min:0',
-        'down_payment'    => 'nullable|numeric|min:0',   // <-- new field
-        'status'          => 'required|in:active,ended,pending',
-    ]);
+    public function store(Request $request)
+    {
+        $validated = $request->validate([
+            'car_id'          => 'required|exists:cars,id',
+            'driver_id'       => 'required|exists:users,id',
+            'start_date'      => 'required|date',
+            'end_date'        => 'nullable|date|after:start_date',
+            'monthly_payment' => 'required|numeric|min:0',
+            'down_payment'    => 'nullable|numeric|min:0',
+            'status'          => 'required|in:active,ended,pending',
+        ]);
 
-    // Default down_payment to 0 if not provided
-    $validated['down_payment'] = $validated['down_payment'] ?? 0;
+        $validated['down_payment'] = $validated['down_payment'] ?? 0;
 
-    // Check if car already has an active lease
-    $existingActive = Lease::where('car_id', $validated['car_id'])
-                            ->where('status', 'active')
-                            ->exists();
-    if ($existingActive) {
-        return back()->withErrors(['car_id' => 'This car already has an active lease.']);
+        // Check if car already has an active lease
+        if (Lease::where('car_id', $validated['car_id'])->where('status', 'active')->exists()) {
+            return back()->withErrors(['car_id' => 'This car already has an active lease.']);
+        }
+
+        // Check if driver already has an ongoing lease (active, paused, or pending)
+        if (Lease::where('driver_id', $validated['driver_id'])
+                 ->whereIn('status', ['active', 'paused', 'pending'])
+                 ->exists()) {
+            return back()->withErrors(['driver_id' => 'This driver already has an active, paused, or pending lease.']);
+        }
+
+        $lease = Lease::create($validated);
+
+        // Create the first pending payment (if needed)
+        $lease->payments()->create([
+            'amount'   => $lease->monthly_payment,
+            'due_date' => $lease->start_date,
+            'status'   => 'pending',
+        ]);
+
+        if ($validated['status'] === 'active') {
+            $car = Car::find($validated['car_id']);
+            $car->status = 'leased';
+            $car->save();
+        }
+
+        return redirect()->back()->with('success', 'Lease created successfully.');
     }
 
-    $lease = Lease::create($validated);
+    /**
+     * Update the specified lease.
+     */
+    public function update(Request $request, Lease $lease)
+    {
+        $validated = $request->validate([
+            'start_date'      => 'required|date',
+            'end_date'        => 'nullable|date|after:start_date',
+            'monthly_payment' => 'required|numeric|min:0',
+            'down_payment'    => 'nullable|numeric|min:0',
+            'status'          => 'required|in:active,ended,pending',
+        ]);
 
-    if ($validated['status'] === 'active') {
-        $car = Car::find($validated['car_id']);
-        $car->status = 'leased';
-        $car->save();
+        $validated['down_payment'] = $validated['down_payment'] ?? 0;
+
+        $oldStatus = $lease->status;
+        $lease->update($validated);
+
+        $car = $lease->car;
+
+        // Update car status based on lease status change
+        if ($validated['status'] === 'active' && $oldStatus !== 'active') {
+            $car->status = 'leased';
+            $car->save();
+        } elseif ($oldStatus === 'active' && $validated['status'] !== 'active') {
+            $car->status = 'available';
+            $car->save();
+        }
+
+        return redirect()->back()->with('success', 'Lease updated successfully.');
     }
-
-    return redirect()->back()->with('success', 'Lease created successfully.');
-}
-
-public function update(Request $request, Lease $lease)
-{
-    $validated = $request->validate([
-        'start_date'      => 'required|date',
-        'end_date'        => 'nullable|date|after:start_date',
-        'monthly_payment' => 'required|numeric|min:0',
-        'down_payment'    => 'nullable|numeric|min:0',
-        'status'          => 'required|in:active,ended,pending',
-    ]);
-
-    $validated['down_payment'] = $validated['down_payment'] ?? 0;
-
-    $oldStatus = $lease->status;
-    $lease->update($validated);
-
-    $car = $lease->car;
-
-    if ($validated['status'] === 'active' && $oldStatus !== 'active') {
-        $car->status = 'leased';
-        $car->save();
-    } elseif ($oldStatus === 'active' && $validated['status'] !== 'active') {
-        $car->status = 'available';
-        $car->save();
-    }
-
-    return redirect()->back()->with('success', 'Lease updated successfully.');
-}
 
     /**
      * Remove the specified lease from storage.
@@ -94,17 +146,4 @@ public function update(Request $request, Lease $lease)
 
         return redirect()->back()->with('success', 'Lease deleted successfully.');
     }
-public function index(Request $request)
-{
-    $leases = Lease::with('car', 'driver')->get();
-    $cars = Car::all(); // for dropdown
-    $drivers = User::where('role', 'driver')->get(); // adjust to your driver model
-
-    return Inertia::render('leases', [
-        'leases' => $leases,
-        'cars' => $cars,
-        'drivers' => $drivers,
-        'filters' => $request->only('search'),
-    ]);
-}
 }

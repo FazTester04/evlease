@@ -4,16 +4,17 @@ import { usePage } from '@inertiajs/vue3';
 import { ref, watch } from 'vue';
 
 const page = usePage();
-const message = ref(page.props.flash.restricted_action);
+const message = ref(page.props.flash?.restricted_action ?? null);
 
 watch(
-    () => page.props.flash.restricted_action,
+    () => page.props.flash?.restricted_action,
     (val) => {
         message.value = val;
         if (val) {
             setTimeout(() => (message.value = null), 10000);
         }
     },
+    { immediate: true }
 );
 </script>
 

@@ -11,11 +11,18 @@ use App\Models\User;
 use App\Enums\UserRole;
 use Illuminate\Http\Request;
 use Inertia\Inertia;
+use Carbon\Carbon;
 
 class DashboardController extends Controller
 {
     public function index()
     {
+        // 0. MAINTENANCE: Auto-update any pending payments that passed their due date
+        // This ensures Admin and Driver dashboards stay in sync
+        LeasePayment::where('status', 'pending')
+            ->where('due_date', '<', now()->startOfDay())
+            ->update(['status' => 'overdue']);
+
         // ---------- KPI Cards ----------
         $totalVehiclesLeased = Lease::where('status', 'active')->count();
         
@@ -24,13 +31,10 @@ class DashboardController extends Controller
             ->whereYear('paid_date', now()->year)
             ->sum('amount');
             
-        $overduePaymentsCount = LeasePayment::where('status', 'pending')
-            ->where('due_date', '<', now())
-            ->count();
-            
-        $vehiclesLeasedCount = $totalVehiclesLeased;
+        // Now we just count the status 'overdue' thanks to Step 0
+        $overduePaymentsCount = LeasePayment::where('status', 'overdue')->count();
 
-        // ---------- Payment Status Overview ----------
+        // ---------- Payment Status Overview (For Charts) ----------
         $paidOnTime = LeasePayment::where('status', 'paid')
             ->whereColumn('paid_date', '<=', 'due_date')
             ->count();
@@ -39,10 +43,7 @@ class DashboardController extends Controller
             ->whereColumn('paid_date', '>', 'due_date')
             ->count();
             
-        $overdue = LeasePayment::where('status', 'pending')
-            ->where('due_date', '<', now())
-            ->count();
-
+        $overdue = $overduePaymentsCount;
         $totalLeases = Lease::count();
 
         // ---------- Maintenance ----------
@@ -59,18 +60,19 @@ class DashboardController extends Controller
             ->where('expiry_date', '<', now()->addDays(30))
             ->count();
 
-        // ---------- Vehicles Requiring Payment Follow-up ----------
-        $vehiclesFollowUp = Lease::with(['car', 'driver', 'payments' => function ($q) {
-                $q->where('status', 'pending')->where('due_date', '<', now());
-            }])
+        // ---------- Vehicles Requiring Follow-up (Action List) ----------
+        $vehiclesFollowUp = Lease::with(['car', 'driver', 'payments'])
             ->whereHas('payments', function ($q) {
-                $q->where('status', 'pending')->where('due_date', '<', now());
+                $q->where('status', 'overdue');
             })
             ->get()
             ->map(function ($lease) {
-                $overduePayment = $lease->payments->first();
+                // Get the oldest overdue payment
+                $overduePayment = $lease->payments
+                    ->where('status', 'overdue')
+                    ->sortBy('due_date')
+                    ->first();
                 
-                // Format car name from make + model
                 $carName = $lease->car 
                     ? trim($lease->car->make . ' ' . $lease->car->model) 
                     : 'Unknown Vehicle';
@@ -79,26 +81,25 @@ class DashboardController extends Controller
                     'vehicle_id' => $lease->car->license_plate ?? 'N/A',
                     'vehicle_name' => $carName,
                     'driver_name' => $lease->driver->name ?? 'Unknown',
-                    'driver_id' => $lease->driver->driver_license ?? $lease->driver->id ?? null,
                     'amount' => $overduePayment->amount ?? 0,
-                    'payment_due' => $overduePayment->due_date ? $overduePayment->due_date->format('n/j/Y') : '',
-                    'last_paid' => $lease->payments()
+                    'payment_due' => $overduePayment->due_date ? $overduePayment->due_date->format('d M Y') : '',
+                    'last_paid' => $lease->payments
                         ->where('status', 'paid')
-                        ->latest('paid_date')
-                        ->first()?->paid_date?->format('n/j/Y') ?? 'Never',
+                        ->sortByDesc('paid_date')
+                        ->first()?->paid_date?->format('d M Y') ?? 'Never',
                     'days_overdue' => $overduePayment ? now()->diffInDays($overduePayment->due_date) : 0,
                 ];
             });
 
-        // ---------- All Leased Vehicles ----------
+        // ---------- All Active Fleet List ----------
         $allLeasedVehicles = Lease::with('car')
             ->where('status', 'active')
             ->get()
             ->map(function ($lease) {
                 return [
-                    'id' => $lease->car->id,
-                    'license_plate' => $lease->car->license_plate,
-                    'model' => trim($lease->car->make . ' ' . $lease->car->model),
+                    'id' => $lease->car->id ?? null,
+                    'license_plate' => $lease->car->license_plate ?? 'N/A',
+                    'model' => $lease->car ? trim($lease->car->make . ' ' . $lease->car->model) : 'N/A',
                 ];
             });
 
@@ -107,7 +108,7 @@ class DashboardController extends Controller
                 'totalVehiclesLeased' => $totalVehiclesLeased,
                 'monthlyRevenue' => number_format($monthlyRevenue, 2),
                 'overduePaymentsCount' => $overduePaymentsCount,
-                'vehiclesLeasedCount' => $vehiclesLeasedCount,
+                'vehiclesLeasedCount' => $totalVehiclesLeased,
             ],
             'paymentStatus' => [
                 'paidOnTime' => $paidOnTime,

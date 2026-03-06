@@ -29,7 +29,7 @@ class Car extends Model
         'license_plate',
         'vin',
         'color',
-        'description',
+        'remarks',
         'status',
     ];
 
@@ -41,7 +41,7 @@ class Car extends Model
     protected $casts = [
         'year' => 'integer',
         'status' => CarStatus::class,
-        'color' => CarColor::class,
+        //'color' => CarColor::class,
         'vin' => 'string',
         'created_at' => 'datetime',
         'updated_at' => 'datetime',

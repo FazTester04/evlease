@@ -4,6 +4,7 @@ namespace App\Http\Middleware;
 
 use Illuminate\Http\Request;
 use Inertia\Middleware;
+use App\Models\Message;
 
 class HandleInertiaRequests extends Middleware
 {
@@ -27,13 +28,18 @@ class HandleInertiaRequests extends Middleware
      *
      * @return array<string, mixed>
      */
-    public function share(Request $request): array
-    {
-        return [
-            ...parent::share($request),
-            'auth' => [
-                'user' => $request->user(),
-            ],
-        ];
-    }
+public function share(Request $request): array
+{
+    return [
+        ...parent::share($request),
+        'auth' => [
+            'user' => $request->user(),
+        ],
+        'unreadMessagesCount' => $request->user()
+            ? \App\Models\Message::where('recipient_id', $request->user()->id)
+                ->whereNull('read_at')
+                ->count()
+            : 0,
+    ];
+}
 }

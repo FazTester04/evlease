@@ -25,51 +25,39 @@ class CarsController extends Controller
     /**
      * Display a listing of cars.
      */
-    public function index(Request $request): Response
-    {
-        $status = $request->input('status');
-        
-        // Get status counts for the filter
-        $statusCounts = Car::selectRaw('status, count(*) as count')
-            ->groupBy('status')
-            ->pluck('count', 'status')
-            ->toArray();
+   public function index(Request $request)
+{
+    $cars = Car::with(['documents', 'leases.documents'])
+        ->when($request->search, function ($query, $search) {
+            $query->where('license_plate', 'like', "%{$search}%")
+                ->orWhere('vin', 'like', "%{$search}%");
+        })
+        ->when($request->status, function ($query, $status) {
+            $query->where('status', $status);
+        })
+        ->orderBy('created_at', 'desc')
+        ->get()
+        ->map(function ($car) {
+            // Merge direct documents and those from leases
+            $directDocs = $car->documents;
+            $leaseDocs = $car->leases->flatMap->documents;
+            $allDocs = $directDocs->concat($leaseDocs)->unique('id');
 
-        $cars = Car::query()->with('files')
-            ->when($request->string('search')->toString(), function ($query, $search) {
-                $query->where(function ($q) use ($search) {
-                    $q->where('make', 'like', "%{$search}%")
-                        ->orWhere('model', 'like', "%{$search}%")
-                        ->orWhere('license_plate', 'like', "%{$search}%");
-                });
-            })
-            ->when($status && $status !== 'all', function ($query) use ($status) {
-                $query->where('status', $status);
-            })
-            ->orderByDesc('created_at')
-            ->paginate(10)
-            ->withQueryString();
+            // Set the specific document types expected by the Vue template
+            $car->road_tax = $allDocs->where('type', 'road_tax')->sortByDesc('created_at')->first();
+            $car->insurance = $allDocs->where('type', 'insurance')->sortByDesc('created_at')->first();
 
-        $statuses = collect(CarStatus::cases())->mapWithKeys(function ($status) use ($statusCounts) {
-            return [
-                $status->value => [
-                    'label' => $status->label(),
-                    'count' => $statusCounts[$status->value] ?? 0,
-                    'color' => $status->color(),
-                ]
-            ];
-        })->toArray();
+            // Optionally keep all_documents for other uses
+            $car->all_documents = $allDocs;
 
-        return Inertia::render('Admin/Cars/Index', [
-            'cars' => $cars,
-            'filters' => [
-                'search' => $request->string('search')->toString(),
-                'status' => $status,
-            ],
-            'statuses' => $statuses,
-        ]);
-    }
+            return $car;
+        });
 
+    return Inertia::render('Fleet/Index', [
+        'cars' => $cars, // <-- must match the prop name in Vue (props.cars)
+        'filters' => $request->only(['search', 'status']),
+    ]);
+}
     /**
      * Show the form for creating a new car.
      */
@@ -92,7 +80,7 @@ class CarsController extends Controller
     /**
      * Store a newly created car in storage.
      */
- public function store(Request $request)
+    public function store(Request $request)
     {
         $validated = $request->validate([
             'license_plate' => 'required|string|max:255|unique:cars',
@@ -100,13 +88,14 @@ class CarsController extends Controller
             'make'          => 'required|string|max:255',
             'model'         => 'required|string|max:255',
             'year'          => 'required|integer|min:1900|max:' . (date('Y') + 1),
-            'color'         => ['required', 'string', Rule::enum(CarColor::class)],
-            'description'   => 'nullable|string',
-            'status'        => ['required', 'string', Rule::enum(CarStatus::class)],
+            'color'         => 'required|string|max:50',
+            'remarks'       => 'string|max:50',
+            'status'        => 'required|string',
         ]);
 
         Car::create($validated);
 
+        // Using back() ensures the driver stays on the same list view
         return redirect()->back()->with('success', 'Car added successfully.');
     }
 
@@ -120,7 +109,7 @@ class CarsController extends Controller
         $imageFiles = $car->files()
             ->where('collection', 'image')
             ->get()
-            ->map(fn ($f) => [
+            ->map(fn($f) => [
                 'id' => $f->id,
                 'url' => Storage::url($f->path),
             ]);
@@ -133,7 +122,7 @@ class CarsController extends Controller
                 'statuses' => array_map(fn($status) => [
                     'value' => $status->value,
                     'label' => $status->label(),
-                    'color' => $status->color()
+                    'color' => $status->color(),
                 ], CarStatus::cases()),
             ],
         ]);
@@ -142,7 +131,7 @@ class CarsController extends Controller
     /**
      * Update the specified car in storage.
      */
-      public function update(Request $request, Car $car)
+    public function update(Request $request, Car $car)
     {
         $validated = $request->validate([
             'license_plate' => 'required|string|max:255|unique:cars,license_plate,' . $car->id,
@@ -163,10 +152,9 @@ class CarsController extends Controller
     /**
      * Remove the specified car from storage.
      */
-      public function destroy(Car $car)
+    public function destroy(Car $car)
     {
         $car->delete();
         return redirect()->back()->with('success', 'Car deleted successfully.');
     }
-
 }

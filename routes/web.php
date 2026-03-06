@@ -2,26 +2,53 @@
 
 use Illuminate\Support\Facades\Route;
 use App\Http\Controllers\DashboardController;
-use App\Http\Controllers\Admin\Auth\AdminAuthController;
+use App\Http\Controllers\Driver\DashboardController as DriverDashboardController;
+use App\Http\Controllers\PaymentsController;
+use App\Http\Controllers\DriverController;
+use App\Http\Controllers\Driver\PaymentController;
+use App\Http\Controllers\Driver\DocumentController;
+use App\Http\Controllers\ReportController;
+use App\Http\Controllers\Driver\VehicleController;
+use App\Http\Controllers\ChatController;
 
-// Redirect root to dashboard (will be protected)
-Route::redirect('/', '/admin/login');
+// Redirect root to the unified login page
+Route::redirect('/', '/login');
 
-// Public admin login routes – accessible without authentication
-Route::prefix('admin')->name('admin.')->group(function () {
-    Route::get('/login', [AdminAuthController::class, 'create'])->name('login');
-    Route::post('/login', [AdminAuthController::class, 'store'])->name('login.store');
+// Protected routes for authenticated users
+Route::middleware('auth')->group(function () {
+    // Driver dashboard
+    Route::get('/dashboard', [DriverDashboardController::class, 'index'])->name('dashboard');
+
+    // Admin-only routes
+    Route::middleware('admin')->group(function () {
+        Route::get('/admin/reports/export', [ReportController::class, 'export'])->name('admin.reports.export');
+    });
+
+    // API route for lease statement
+    Route::get('/api/lease/{lease}/statement', [PaymentsController::class, 'statement'])
+        ->name('api.lease.statement');
+
+    // All driver routes under one prefix group
+    Route::prefix('driver')->name('driver.')->group(function () {
+        Route::resource('leases', App\Http\Controllers\Driver\LeaseController::class)
+            ->only(['index', 'show']);
+        Route::resource('documents', DocumentController::class)
+            ->only(['index', 'create', 'store', 'destroy']);
+        Route::resource('payments', PaymentController::class)
+            ->only(['index', 'create', 'store']);
+        Route::get('/vehicles', [VehicleController::class, 'index'])->name('vehicles.index');
+    });
+
+    // Chat routes (accessible to both admin and drivers)
+    Route::prefix('chat')->name('chat.')->group(function () {
+        Route::get('/', [ChatController::class, 'index'])->name('index');
+        Route::get('/{user}', [ChatController::class, 'show'])->name('show');
+        Route::post('/message', [ChatController::class, 'store'])->name('store');
+    });
 });
 
-// Protected dashboard routes – only authenticated admins can access
-Route::middleware(['auth', 'admin'])->group(function () {
-    Route::get('/ev-dashboard', [DashboardController::class, 'index'])->name('ev.dashboard');
-    
-});
-Route::get('/api/lease/{lease}/statement', [App\Http\Controllers\PaymentsController::class, 'statement'])->middleware('auth');
+// Include authentication routes (login, logout, etc.)
+require __DIR__ . '/auth.php';
 
-// Include authentication routes (login, register, etc.)
-require __DIR__.'/auth.php';
-
-// Include admin routes – they are already protected inside their own file
-require __DIR__.'/admin.php';
+// Include admin routes – these are already protected inside admin.php
+require __DIR__ . '/admin.php';

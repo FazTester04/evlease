@@ -11,10 +11,12 @@ class LeasePayment extends Model
 {
     protected $fillable = [
         'lease_id',
+        'driver_id',
         'due_date',
         'paid_date',
         'amount',
         'status',
+        'receipt_path', // <-- add this
     ];
 
     protected $casts = [
@@ -29,14 +31,33 @@ class LeasePayment extends Model
     {
         return $this->belongsTo(Lease::class);
     }
-     
-public function document()
-{
-    return $this->hasOne(Document::class, 'lease_payment_id');
-}
 
- public function getProofUrlAttribute()
+    public function document()
+    {
+        return $this->hasOne(Document::class, 'lease_payment_id');
+    }
+
+  public function getProofUrlAttribute()
 {
-    return $this->document?->file_path ? Storage::url($this->document->file_path) : null;
+    if ($this->document && $this->document->file_path) {
+        return Storage::url($this->document->file_path);
+    }
+    if ($this->receipt_path) {
+        return Storage::url($this->receipt_path);
+    }
+    return null;
+}
+    public function payments()
+    {
+        return $this->hasMany(LeasePayment::class);
+    }
+
+    public function driver()
+    {
+        return $this->belongsTo(User::class, 'driver_id');
+    }
+    public function lateFees()
+{
+    return $this->hasMany(LateFee::class);
 }
 }

@@ -14,17 +14,13 @@ import {
     SidebarMenuItem,
     useSidebar,
 } from '@/components/ui/sidebar';
-import { usePage, router } from '@inertiajs/vue3';
+import { usePage } from '@inertiajs/vue3';
 import { ChevronsUpDown, LogOut } from 'lucide-vue-next';
 import { Link } from '@inertiajs/vue3';
 
 const page = usePage();
 const user = page.props.auth.user;
 const { isMobile, state } = useSidebar();
-
-const handleLogout = () => {
-    router.post('/logout'); // Direct POST to logout route
-};
 </script>
 
 <template>
@@ -58,12 +54,10 @@ const handleLogout = () => {
                         </div>
                     </DropdownMenuLabel>
                     <DropdownMenuSeparator />
-                    <!-- You can add other menu items here if needed -->
                     <DropdownMenuItem as-child>
                         <Link
                             class="block w-full"
                             href="/logout"
-                            @click="handleLogout"
                             as="button"
                             method="post"
                         >

@@ -9,6 +9,7 @@ use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Route;
 use Inertia\Inertia;
+use App\Enums\UserRole;
 use Inertia\Response;
 
 class AuthenticatedSessionController extends Controller
@@ -33,7 +34,14 @@ class AuthenticatedSessionController extends Controller
 
         $request->session()->regenerate();
 
-        return redirect()->intended(route('dashboard', absolute: false));
+        $user = Auth::user();
+
+        // Role‑based redirection
+        if ($user->role === UserRole::ADMIN) {
+            return redirect()->intended('/admin/cars');
+        }
+
+        return redirect()->intended('/dashboard');
     }
 
     /**

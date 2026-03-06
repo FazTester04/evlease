@@ -2,6 +2,7 @@
 import AppSidebarLayout from '@/layouts/app/AppSidebarLayout.vue';
 import { router, usePage, useForm } from '@inertiajs/vue3';
 import { ref, watch } from 'vue';
+import { CreditCard, X, Calendar, Clock, UploadCloud, CheckCircle2, Loader2 } from 'lucide-vue-next';
 
 const page = usePage<any>();
 const props = page.props as any;
@@ -11,19 +12,22 @@ const formatDate = (dateString: string | null) => {
     if (!dateString || dateString === '—') return '—';
     const date = new Date(dateString);
     return date.toLocaleDateString('en-GB', {
-        day: '2-digit',
-        month: 'short',
-        year: 'numeric',
+        day: '2-digit', month: 'short', year: 'numeric',
     });
 };
 
-// ---------- Search ----------
+// ---------- Filters ----------
 const search = ref(props.filters?.search || '');
+const statusFilter = ref(props.filters?.status || '');
+
 let searchTimeout: ReturnType<typeof setTimeout>;
-watch(search, (value) => {
+watch([search, statusFilter], ([newSearch, newStatus]) => {
     clearTimeout(searchTimeout);
     searchTimeout = setTimeout(() => {
-        router.get('/fleet/vehicles', { search: value }, { preserveState: true, preserveScroll: true });
+        router.get('/admin/vehicles', { 
+            search: newSearch, 
+            status: newStatus 
+        }, { preserveState: true, preserveScroll: true });
     }, 300);
 });
 
@@ -36,6 +40,7 @@ const addForm = useForm({
     model: '',
     year: new Date().getFullYear(),
     color: '',
+    remarks : '',
     status: 'available',
 });
 const submitAdd = () => {
@@ -44,6 +49,8 @@ const submitAdd = () => {
         onSuccess: () => {
             showAddModal.value = false;
             addForm.reset();
+            // This tells Inertia to fetch the latest 'cars' data immediately
+            router.reload({ only: ['cars'] });
         },
     });
 };
@@ -122,23 +129,23 @@ const paymentForm = useForm({
     due_date: '',
     proof: null as File | null,
 });
-watch(() => paymentForm.paid_date, (newPaidDate) => {
-    if (newPaidDate) {
-        const date = new Date(newPaidDate);
-        const dueDate = new Date(date.getFullYear(), date.getMonth(), 29);
-        paymentForm.due_date = dueDate.toISOString().split('T')[0];
+
+// No watcher – due_date is fixed when modal opens
+const handlePaymentProofChange = (e) => {
+    const file = e.target.files[0];
+    if (file) {
+        paymentForm.receipt = file; // For the server
+        paymentForm.receipt_name = file.name; // To trigger the green UI box
     }
-});
-const handlePaymentProofChange = (e: Event) => {
-    const target = e.target as HTMLInputElement;
-    paymentForm.proof = target.files?.[0] || null;
 };
 const openPaymentModal = (car: any) => {
     selectedCarForPayment.value = car;
     paymentForm.lease_id = car.active_lease_id;
     const today = new Date();
     paymentForm.paid_date = today.toISOString().split('T')[0];
-    const dueDate = new Date(today.getFullYear(), today.getMonth(), 29);
+    // Last day of current month
+    const lastDay = new Date(today.getFullYear(), today.getMonth() + 1, 0).getDate();
+    const dueDate = new Date(today.getFullYear(), today.getMonth(), lastDay);
     paymentForm.due_date = dueDate.toISOString().split('T')[0];
     paymentForm.amount = car.current_driver?.monthly_payment || '';
     showPaymentModal.value = true;
@@ -181,6 +188,17 @@ const updateLease = async () => {
         },
     });
 };
+
+const setMaintenance = (id: number) => {
+    if (confirm('Move this vehicle to maintenance? Any active lease will be paused.')) {
+        router.patch(`/admin/vehicles/${id}/maintenance`, {}, {
+            preserveScroll: true,
+            onSuccess: () => {
+                router.reload({ only: ['cars'] });
+            },
+        });
+    }
+};
 </script>
 
 <template>
@@ -198,19 +216,25 @@ const updateLease = async () => {
                 </button>
             </div>
 
-            <!-- Search -->
-            <div class="mb-6 flex items-center">
-                <div class="relative w-full md:w-96">
+            <!-- Filters -->
+            <div class="mb-6 flex flex-col sm:flex-row gap-4">
+                <div class="relative w-full sm:w-96">
                     <div class="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
-                        <svg class="h-5 w-5 text-slate-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <svg class="h-5 w-5 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
                         </svg>
                     </div>
-                    <input v-model="search" type="text" placeholder="Search by plate or VIN..." class="block w-full pl-10 pr-3 py-2.5 border border-slate-200 rounded-full text-sm placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 shadow-sm transition-shadow bg-white" />
+                    <input v-model="search" type="text" placeholder="Search by plate or VIN..." class="block w-full pl-10 pr-3 py-2.5 border border-slate-200 rounded-full text-sm placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 shadow-sm bg-white" />
                 </div>
+                <select v-model="statusFilter" class="px-4 py-2.5 border border-slate-200 rounded-full text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 bg-white">
+                    <option value="">All Statuses</option>
+                    <option value="available">Available</option>
+                    <option value="leased">Leased</option>
+                    <option value="maintenance">Maintenance</option>
+                </select>
             </div>
 
-            <!-- Vehicles Table (your existing table) -->
+            <!-- Vehicles Table -->
             <div class="bg-white border border-slate-200 rounded-xl shadow-sm overflow-hidden">
                 <div class="overflow-x-auto">
                     <table class="w-full text-left border-collapse">
@@ -287,22 +311,44 @@ const updateLease = async () => {
                                         <span class="font-medium text-slate-900">{{ formatDate(car.next_service_date) }}</span>
                                     </div>
                                 </td>
-                                <td class="px-6 py-4 align-top text-right">
-                                    <div class="flex items-center justify-end gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
-                                        <button v-if="car.active_lease_id" @click="openPaymentModal(car)" class="p-1.5 text-indigo-600 hover:bg-indigo-50 rounded-md transition-colors" title="Record Payment">
-                                            <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
-                                        </button>
-                                        <button @click="openDocModal(car)" class="p-1.5 text-emerald-600 hover:bg-emerald-50 rounded-md transition-colors" title="Upload Document">
-                                            <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"></path></svg>
-                                        </button>
-                                        <button @click="editCar(car)" class="p-1.5 text-slate-600 hover:bg-slate-100 rounded-md transition-colors" title="Edit Vehicle">
-                                            <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"></path></svg>
-                                        </button>
-                                        <button @click="deleteCar(car.id)" class="p-1.5 text-red-600 hover:bg-red-50 rounded-md transition-colors" title="Delete Vehicle">
-                                            <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"></path></svg>
-                                        </button>
-                                    </div>
-                                </td>
+             <td class="px-6 py-4 align-middle text-right">
+    <div class="flex items-center justify-end gap-1">
+        
+        <div class="flex items-center bg-slate-50 border border-slate-200/60 rounded-lg p-0.5 mr-1">
+            <button v-if="car.active_lease_id" 
+                @click="openPaymentModal(car)" 
+                class="p-2 text-indigo-600 hover:bg-white hover:shadow-sm rounded-md transition-all active:scale-90" 
+                title="Record Payment">
+                <svg class="w-4.5 h-4.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
+            </button>
+
+            <button v-if="car.status !== 'maintenance'"
+                @click="setMaintenance(car.id)"
+                class="p-2 text-amber-600 hover:bg-white hover:shadow-sm rounded-md transition-all active:scale-90"
+                title="Move to Maintenance">
+                <svg class="w-4.5 h-4.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"></path><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"></path></svg>
+            </button>
+        </div>
+
+        <button @click="openDocModal(car)" 
+            class="p-2 text-slate-400 hover:text-emerald-600 hover:bg-emerald-50 rounded-lg transition-all" 
+            title="Documents">
+            <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"></path></svg>
+        </button>
+
+        <button @click="editCar(car)" 
+            class="p-2 text-slate-400 hover:text-slate-900 hover:bg-slate-100 rounded-lg transition-all" 
+            title="Edit">
+            <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"></path></svg>
+        </button>
+
+        <button @click="deleteCar(car.id)" 
+            class="p-2 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-all" 
+            title="Delete">
+            <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"></path></svg>
+        </button> 
+    </div>
+</td>
                             </tr>
                             <tr v-if="!props.cars?.length">
                                 <td colspan="7" class="px-6 py-8 text-center text-slate-500">No vehicles found.</td>
@@ -315,205 +361,466 @@ const updateLease = async () => {
     </AppSidebarLayout>
 
     <!-- Add Vehicle Modal -->
-    <div v-if="showAddModal" class="fixed inset-0 z-50 overflow-y-auto" @click.self="showAddModal = false">
-        <div class="fixed inset-0 bg-black/50 transition-opacity" @click="showAddModal = false"></div>
-        <div class="flex min-h-full items-center justify-center p-4">
-            <div class="relative w-full max-w-2xl bg-white rounded-xl shadow-xl overflow-hidden">
-                <form @submit.prevent="submitAdd">
-                    <div class="px-6 py-4">
-                        <h3 class="text-xl font-semibold text-slate-900 mb-2">Add New Vehicle</h3>
-                        <div class="space-y-4">
-                            <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
-                                <div>
-                                    <label class="modal-label">License Plate *</label>
-                                    <input v-model="addForm.license_plate" type="text" class="modal-input" required />
-                                    <p v-if="addForm.errors.license_plate" class="text-sm text-red-600 mt-1">{{ addForm.errors.license_plate }}</p>
-                                </div>
-                                <div>
-                                    <label class="modal-label">VIN</label>
-                                    <input v-model="addForm.vin" type="text" class="modal-input" />
-                                </div>
+    <div v-if="showAddModal" class="fixed inset-0 z-50 flex items-center justify-center p-4">
+        <div class="fixed inset-0 bg-slate-900/60 backdrop-blur-sm transition-opacity" @click="showAddModal = false"></div>
+
+        <div class="relative w-full max-w-2xl bg-white rounded-[2rem] shadow-2xl overflow-hidden transform transition-all animate-in fade-in zoom-in duration-200">
+            
+            <div class="bg-slate-50 border-b border-slate-100 p-8 flex items-center justify-between">
+                <div class="flex items-center gap-4">
+                    <div class="h-12 w-12 bg-emerald-100 text-emerald-600 rounded-2xl flex items-center justify-center">
+                        <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v3m0 0v3m0-3h3m-3 0H9m12 0a9 9 0 11-18 0 9 9 0 0118 0z" />
+                        </svg>
+                    </div>
+                    <div>
+                        <h3 class="text-xl font-black text-slate-900 leading-tight">Add New Vehicle</h3>
+                        <p class="text-xs text-slate-400 font-medium mt-1 uppercase tracking-wider">Fleet Expansion Entry</p>
+                    </div>
+                </div>
+                <button @click="showAddModal = false" class="text-slate-400 hover:text-slate-600 transition-colors">
+                    <X class="h-6 w-6" />
+                </button>
+            </div>
+
+            <form @submit.prevent="submitAdd" class="p-8">
+                <div class="space-y-8">
+                    
+                    <div>
+                        <div class="flex items-center gap-2 mb-4">
+                            <span class="h-1 w-8 bg-emerald-600 rounded-full"></span>
+                            <h4 class="text-[10px] font-bold uppercase tracking-[0.2em] text-slate-400">Identification</h4>
+                        </div>
+                        <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+                            <div class="space-y-2">
+                                <label class="text-xs font-bold text-slate-700 ml-1">License Plate *</label>
+                                <input v-model="addForm.license_plate" type="text" 
+                                    class="w-full px-4 py-3 bg-slate-50 border-slate-200 rounded-xl focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500 transition-all font-mono font-bold text-slate-900 uppercase placeholder:text-slate-300" 
+                                    placeholder="WXX 1234" required />
+                                <p v-if="addForm.errors.license_plate" class="text-[10px] text-red-500 font-bold uppercase mt-1 ml-1">{{ addForm.errors.license_plate }}</p>
                             </div>
-                            <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
-                                <div>
-                                    <label class="modal-label">Make *</label>
-                                    <input v-model="addForm.make" type="text" class="modal-input" required />
-                                </div>
-                                <div>
-                                    <label class="modal-label">Model *</label>
-                                    <input v-model="addForm.model" type="text" class="modal-input" required />
-                                </div>
-                            </div>
-                            <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
-                                <div>
-                                    <label class="modal-label">Year *</label>
-                                    <input v-model="addForm.year" type="number" min="1900" :max="new Date().getFullYear() + 1" class="modal-input" required />
-                                </div>
-                                <div>
-                                    <label class="modal-label">Color</label>
-                                    <input v-model="addForm.color" type="text" class="modal-input" />
-                                </div>
-                            </div>
-                            <div>
-                                <label class="modal-label">Status *</label>
-                                <select v-model="addForm.status" class="modal-input" required>
-                                    <option value="available">Available</option>
-                                    <option value="leased">Leased</option>
-                                    <option value="maintenance">Maintenance</option>
-                                </select>
+                            <div class="space-y-2">
+                                <label class="text-xs font-bold text-slate-700 ml-1">VIN (Chassis Number)</label>
+                                <input v-model="addForm.vin" type="text" 
+                                    class="w-full px-4 py-3 bg-slate-50 border-slate-200 rounded-xl focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500 transition-all font-mono text-sm text-slate-600 uppercase" 
+                                    />
                             </div>
                         </div>
                     </div>
-                    <div class="bg-slate-50 px-6 py-3 flex justify-end gap-3 border-t border-slate-200">
-                        <button type="button" @click="showAddModal = false" class="px-4 py-2 border border-slate-300 rounded-lg text-sm font-medium text-slate-700 bg-white hover:bg-slate-50">Cancel</button>
-                        <button type="submit" :disabled="addForm.processing" class="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg text-sm font-medium shadow-sm disabled:opacity-50">
-                            {{ addForm.processing ? 'Saving...' : 'Save Vehicle' }}
-                        </button>
-                    </div>
-                </form>
-            </div>
-        </div>
-    </div>
 
-    <!-- Edit Vehicle Modal -->
-    <div v-if="showEditCarModal" class="fixed inset-0 z-50 overflow-y-auto" @click.self="showEditCarModal = false">
-        <div class="fixed inset-0 bg-black/50 transition-opacity" @click="showEditCarModal = false"></div>
-        <div class="flex min-h-full items-center justify-center p-4">
-            <div class="relative w-full max-w-2xl bg-white rounded-xl shadow-xl overflow-hidden">
-                <form @submit.prevent="updateCar">
-                    <div class="px-6 py-4">
-                        <h3 class="text-xl font-semibold text-slate-900 mb-2">Edit Vehicle</h3>
-                        <div class="space-y-4">
-                            <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
-                                <div>
-                                    <label class="modal-label">License Plate *</label>
-                                    <input v-model="editingCar.license_plate" type="text" class="modal-input" required />
-                                    <p v-if="editingCar.errors?.license_plate" class="text-sm text-red-600 mt-1">{{ editingCar.errors.license_plate }}</p>
-                                </div>
-                                <div>
-                                    <label class="modal-label">VIN</label>
-                                    <input v-model="editingCar.vin" type="text" class="modal-input" />
-                                </div>
+                    <div>
+                        <div class="flex items-center gap-2 mb-4">
+                            <span class="h-1 w-8 bg-emerald-600 rounded-full"></span>
+                            <h4 class="text-[10px] font-bold uppercase tracking-[0.2em] text-slate-400">Specifications</h4>
+                        </div>
+                        <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+                            <div class="space-y-2">
+                                <label class="text-xs font-bold text-slate-700 ml-1">Make *</label>
+                                <input v-model="addForm.make" type="text" 
+                                    class="w-full px-4 py-3 bg-slate-50 border-slate-200 rounded-xl focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500 transition-all text-sm font-medium" 
+                                    placeholder="e.g. Proton" required />
                             </div>
-                            <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
-                                <div>
-                                    <label class="modal-label">Make *</label>
-                                    <input v-model="editingCar.make" type="text" class="modal-input" required />
-                                </div>
-                                <div>
-                                    <label class="modal-label">Model *</label>
-                                    <input v-model="editingCar.model" type="text" class="modal-input" required />
-                                </div>
+                            <div class="space-y-2">
+                                <label class="text-xs font-bold text-slate-700 ml-1">Model *</label>
+                                <input v-model="addForm.model" type="text" 
+                                    class="w-full px-4 py-3 bg-slate-50 border-slate-200 rounded-xl focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500 transition-all text-sm font-medium" 
+                                    placeholder="e.g. Saga" required />
                             </div>
-                            <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
-                                <div>
-                                    <label class="modal-label">Year *</label>
-                                    <input v-model="editingCar.year" type="number" min="1900" :max="new Date().getFullYear() + 1" class="modal-input" required />
-                                </div>
-                                <div>
-                                    <label class="modal-label">Color</label>
-                                    <input v-model="editingCar.color" type="text" class="modal-input" />
-                                </div>
+                        </div>
+                        
+                        <div class="grid grid-cols-1 md:grid-cols-2 gap-6 mt-6">
+                            <div class="space-y-2">
+                                <label class="text-xs font-bold text-slate-700 ml-1">Year *</label>
+                                <input v-model="addForm.year" type="number" 
+                                    class="w-full px-4 py-3 bg-slate-50 border-slate-200 rounded-xl focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500 transition-all text-sm font-medium" 
+                                    required />
                             </div>
-                            <div>
-                                <label class="modal-label">Status *</label>
-                                <select v-model="editingCar.status" class="modal-input" required>
-                                    <option value="available">Available</option>
-                                    <option value="leased">Leased</option>
-                                    <option value="maintenance">Maintenance</option>
-                                </select>
+                            <div class="space-y-2">
+                                <label class="text-xs font-bold text-slate-700 ml-1">Color *</label>
+                                <input v-model="addForm.color" type="text" 
+                                    class="w-full px-4 py-3 bg-slate-50 border-slate-200 rounded-xl focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500 transition-all text-sm font-medium" 
+                                    placeholder="e.g. White" required />
                             </div>
                         </div>
                     </div>
-                    <div class="bg-slate-50 px-6 py-3 flex justify-end gap-3 border-t border-slate-200">
-                        <button type="button" @click="showEditCarModal = false" class="px-4 py-2 border border-slate-300 rounded-lg text-sm font-medium text-slate-700 bg-white hover:bg-slate-50">Cancel</button>
-                        <button type="submit" :disabled="editCarProcessing" class="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg text-sm font-medium shadow-sm disabled:opacity-50">
-                            {{ editCarProcessing ? 'Saving...' : 'Save Changes' }}
-                        </button>
+
+                    <div>
+                        <div class="flex items-center gap-2 mb-4">
+                            <span class="h-1 w-8 bg-emerald-600 rounded-full"></span>
+                            <h4 class="text-[10px] font-bold uppercase tracking-[0.2em] text-slate-400">Additional Information</h4>
+                        </div>
+                        <div class="space-y-2">
+                            <label class="text-xs font-bold text-slate-700 ml-1">Remarks</label>
+                            <textarea v-model="addForm.remarks" rows="3"
+                                class="w-full px-4 py-3 bg-slate-50 border-slate-200 rounded-xl focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500 transition-all text-sm font-medium placeholder:text-slate-300 resize-none" 
+                                placeholder="Add any specific notes or history about this vehicle..."></textarea>
+                        </div>
                     </div>
-                </form>
-            </div>
+                </div>
+
+                <div class="mt-10 flex flex-wrap gap-4">
+                    <button type="button" @click="showAddModal = false" 
+                        class="flex-1 px-6 py-4 border border-slate-200 rounded-2xl text-sm font-bold text-slate-500 hover:bg-slate-50 transition-all">
+                        Cancel
+                    </button>
+                    <button type="submit" :disabled="addForm.processing" 
+                        class="flex-[2] px-6 py-4 bg-emerald-600 hover:bg-emerald-700 text-white rounded-2xl text-sm font-bold shadow-lg shadow-emerald-200 transition-all disabled:opacity-50 disabled:scale-95 flex items-center justify-center gap-2">
+                        <Loader2 v-if="addForm.processing" class="h-4 w-4 animate-spin" />
+                        {{ addForm.processing ? 'Syncing with Fleet...' : 'Register Vehicle' }}
+                    </button>
+                </div>
+            </form>
         </div>
     </div>
+<div v-if="showEditCarModal" class="fixed inset-0 z-50 flex items-center justify-center p-4">
+    <div class="fixed inset-0 bg-slate-900/60 backdrop-blur-md transition-opacity" @click="showEditCarModal = false"></div>
 
-    <!-- Document Upload Modal -->
-    <div v-if="showDocModal" class="fixed inset-0 z-50 overflow-y-auto">
-        <div class="fixed inset-0 bg-black/50 transition-opacity" @click="showDocModal = false"></div>
-        <div class="flex min-h-full items-center justify-center p-4">
-            <div class="relative w-full max-w-md bg-white rounded-xl shadow-xl p-6">
-                <h3 class="text-lg font-medium mb-4">Upload Document for {{ selectedCarForDoc?.license_plate }}</h3>
-                <form @submit.prevent="submitDoc" enctype="multipart/form-data">
-                    <div class="space-y-4">
-                        <div>
-                            <label class="modal-label">Document Type</label>
-                            <select v-model="docForm.type" class="modal-input">
-                                <option value="insurance">Insurance</option>
-                                <option value="road_tax">Road Tax</option>
+    <div class="relative w-full max-w-2xl bg-white rounded-[2.5rem] shadow-2xl overflow-hidden transform transition-all animate-in fade-in zoom-in duration-300">
+        
+        <div class="bg-slate-50 border-b border-slate-100 p-8 flex items-center justify-between relative overflow-hidden">
+            <div class="absolute -right-10 -top-10 w-32 h-32 bg-emerald-500/5 rounded-full blur-3xl"></div>
+            
+            <div class="relative z-10 flex items-center gap-5">
+                <div class="h-14 w-14 bg-emerald-600 text-white rounded-2xl flex items-center justify-center shadow-lg shadow-emerald-200">
+                    <Settings2 class="w-7 h-7" />
+                </div>
+                <div>
+                    <h3 class="text-2xl font-black text-slate-900 tracking-tight">Edit Vehicle</h3>
+                    <div class="flex items-center gap-2 mt-1">
+                        <span class="px-2 py-0.5 bg-slate-900 text-white text-[10px] font-mono font-bold uppercase rounded tracking-wider">
+                            {{ editingCar?.license_plate }}
+                        </span>
+                        <span class="text-slate-400 text-sm font-bold uppercase tracking-tighter">
+                            {{ editingCar?.make }} {{ editingCar?.model }}
+                        </span>
+                    </div>
+                </div>
+            </div>
+            <button @click="showEditCarModal = false" class="p-2 bg-white border border-slate-100 rounded-full text-slate-400 hover:text-rose-500 transition-all shadow-sm z-10">
+                <X class="h-6 w-6" />
+            </button>
+        </div>
+
+        <form @submit.prevent="updateCar" class="p-8">
+            <div class="space-y-8">
+                
+                <div class="space-y-4">
+                    <div class="flex items-center gap-2 mb-2">
+                        <div class="h-6 w-1 bg-emerald-500 rounded-full"></div>
+                        <h4 class="text-[11px] font-black uppercase tracking-[0.2em] text-slate-400">Identification Details</h4>
+                    </div>
+                    
+                    <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+                        <div class="space-y-2">
+                            <label class="text-[10px] font-black uppercase tracking-widest text-slate-400 ml-1">License Plate</label>
+                            <input v-model="editingCar.license_plate" type="text" 
+                                class="w-full px-4 py-3.5 bg-slate-50 border-transparent rounded-2xl focus:bg-white focus:ring-4 focus:ring-emerald-500/10 focus:border-emerald-500 transition-all font-mono font-black text-slate-900 uppercase shadow-inner" required />
+                            <p v-if="editingCar.errors?.license_plate" class="text-[10px] text-rose-500 font-bold uppercase mt-1 ml-1">{{ editingCar.errors.license_plate }}</p>
+                        </div>
+                        <div class="space-y-2">
+                            <label class="text-[10px] font-black uppercase tracking-widest text-slate-400 ml-1">VIN / Chassis Number</label>
+                            <input v-model="editingCar.vin" type="text" 
+                                class="w-full px-4 py-3.5 bg-slate-50 border-transparent rounded-2xl focus:bg-white focus:ring-4 focus:ring-emerald-500/10 focus:border-emerald-500 transition-all font-mono text-sm text-slate-600 uppercase shadow-inner" placeholder="Optional" />
+                        </div>
+                    </div>
+                </div>
+
+                <div class="space-y-4">
+                    <div class="flex items-center gap-2 mb-2">
+                        <div class="h-6 w-1 bg-emerald-500 rounded-full"></div>
+                        <h4 class="text-[11px] font-black uppercase tracking-[0.2em] text-slate-400">Specifications</h4>
+                    </div>
+
+                    <div class="grid grid-cols-2 md:grid-cols-4 gap-5">
+                        <div class="col-span-2 md:col-span-1 space-y-2">
+                            <label class="text-[10px] font-black uppercase tracking-widest text-slate-400 ml-1">Make</label>
+                            <input v-model="editingCar.make" type="text" class="w-full px-4 py-3.5 bg-slate-50 border-transparent rounded-2xl focus:bg-white focus:ring-4 focus:ring-emerald-500/10 focus:border-emerald-500 text-sm font-bold text-slate-700 transition-all shadow-inner" required />
+                        </div>
+                        <div class="col-span-2 md:col-span-1 space-y-2">
+                            <label class="text-[10px] font-black uppercase tracking-widest text-slate-400 ml-1">Model</label>
+                            <input v-model="editingCar.model" type="text" class="w-full px-4 py-3.5 bg-slate-50 border-transparent rounded-2xl focus:bg-white focus:ring-4 focus:ring-emerald-500/10 focus:border-emerald-500 text-sm font-bold text-slate-700 transition-all shadow-inner" required />
+                        </div>
+                        <div class="space-y-2">
+                            <label class="text-[10px] font-black uppercase tracking-widest text-slate-400 ml-1">Year</label>
+                            <input v-model="editingCar.year" type="number" class="w-full px-4 py-3.5 bg-slate-50 border-transparent rounded-2xl focus:bg-white focus:ring-4 focus:ring-emerald-500/10 focus:border-emerald-500 text-sm font-bold text-slate-700 transition-all shadow-inner" />
+                        </div>
+                        <div class="space-y-2">
+                            <label class="text-[10px] font-black uppercase tracking-widest text-slate-400 ml-1">Color</label>
+                            <input v-model="editingCar.color" type="text" class="w-full px-4 py-3.5 bg-slate-50 border-transparent rounded-2xl focus:bg-white focus:ring-4 focus:ring-emerald-500/10 focus:border-emerald-500 text-sm font-bold text-slate-700 transition-all shadow-inner" />
+                        </div>
+                    </div>
+
+                    <div class="space-y-2">
+                        <label class="text-[10px] font-black uppercase tracking-widest text-slate-400 ml-1">Operational Status</label>
+                        <div class="flex gap-3">
+                            <select v-model="editingCar.status" 
+                                :class="[
+                                    'w-full px-4 py-4 border-transparent rounded-2xl text-sm font-black uppercase tracking-wider transition-all shadow-inner appearance-none cursor-pointer',
+                                    editingCar.status === 'available' ? 'bg-emerald-100 text-emerald-700 ring-2 ring-emerald-500/20' : 
+                                    editingCar.status === 'leased' ? 'bg-indigo-100 text-indigo-700 ring-2 ring-indigo-500/20' : 
+                                    'bg-amber-100 text-amber-700 ring-2 ring-amber-500/20'
+                                ]">
+                                <option value="available">🟢 Available for Lease</option>
+                                <option value="leased">🔵 Currently Leased</option>
+                                <option value="maintenance">🟠 Under Maintenance</option>
                             </select>
                         </div>
-                        <div>
-                            <label class="modal-label">File (PDF, JPG, PNG)</label>
-                            <input type="file" @change="handleDocFileChange" accept=".pdf,.jpg,.jpeg,.png" class="mt-1 block w-full" required />
-                        </div>
-                        <div>
-                            <label class="modal-label">Expiry Date</label>
-                            <input type="date" v-model="docForm.expiry_date" class="modal-input" required />
-                        </div>
-                        <div>
-                            <label class="modal-label">Status</label>
-                            <select v-model="docForm.status" class="modal-input">
-                                <option value="valid">Valid</option>
-                                <option value="expiring">Expiring</option>
-                                <option value="expired">Expired</option>
-                            </select>
-                        </div>
                     </div>
-                    <div class="mt-6 flex justify-end gap-3">
-                        <button type="button" @click="showDocModal = false" class="px-4 py-2 border border-slate-300 rounded-lg text-sm font-medium text-slate-700 bg-white hover:bg-slate-50">Cancel</button>
-                        <button type="submit" :disabled="docForm.processing" class="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg text-sm font-medium shadow-sm disabled:opacity-50">
-                            {{ docForm.processing ? 'Uploading...' : 'Upload' }}
-                        </button>
-                    </div>
-                </form>
-            </div>
-        </div>
-    </div>
+                </div>
 
+                <div class="space-y-2 pt-2">
+                    <label class="text-[10px] font-black uppercase tracking-widest text-slate-400 ml-1">Internal Remarks & Notes</label>
+                    <textarea v-model="editingCar.remarks" rows="3"
+                        class="w-full px-5 py-4 bg-slate-50 border-transparent rounded-[1.5rem] focus:bg-white focus:ring-4 focus:ring-emerald-500/10 focus:border-emerald-500 transition-all text-sm font-medium placeholder:text-slate-300 resize-none shadow-inner" 
+                        placeholder="Condition notes, maintenance history..."></textarea>
+                </div>
+            </div>
+
+            <div class="mt-10 flex items-center gap-4">
+                <button type="button" @click="showEditCarModal = false" 
+                    class="flex-1 px-6 py-4 border border-slate-200 rounded-2xl text-xs font-black uppercase tracking-widest text-slate-400 hover:bg-slate-50 hover:text-slate-600 transition-all">
+                    Discard
+                </button>
+                <button type="submit" :disabled="editCarProcessing" 
+                    class="flex-[2] px-6 py-4 bg-slate-900 hover:bg-emerald-600 text-white rounded-2xl text-xs font-black uppercase tracking-[0.15em] shadow-xl shadow-slate-200 transition-all active:scale-[0.98] disabled:opacity-50 flex items-center justify-center gap-3">
+                    <Loader2 v-if="editCarProcessing" class="h-5 w-5 animate-spin" />
+                    <span>{{ editCarProcessing ? 'Applying Changes...' : 'Update Vehicle' }}</span>
+                </button>
+            </div>
+        </form>
+    </div>
+</div>
+ <div v-if="showDocModal" class="fixed inset-0 z-50 flex items-center justify-center p-4">
+    <div class="fixed inset-0 bg-slate-900/60 backdrop-blur-md transition-opacity" @click="showDocModal = false"></div>
+
+    <div class="relative w-full max-w-md bg-white rounded-[2.5rem] shadow-2xl overflow-hidden transform transition-all animate-in fade-in zoom-in duration-300">
+        
+        <div class="bg-slate-50 border-b border-slate-100 p-7 flex items-center justify-between">
+            <div class="flex items-center gap-4">
+                <div class="h-12 w-12 bg-indigo-100 text-indigo-600 rounded-2xl flex items-center justify-center shadow-sm">
+                    <UploadCloud class="w-6 h-6" />
+                </div>
+                <div>
+                    <h3 class="text-lg font-black text-slate-900 leading-tight">Upload Document</h3>
+                    <div class="flex items-center gap-1.5 mt-1">
+                        <span class="text-[10px] font-bold text-slate-400 uppercase tracking-tight">Attaching to</span>
+                        <span class="px-1.5 py-0.5 bg-slate-200 text-slate-700 rounded text-[9px] font-mono font-black uppercase">
+                            {{ selectedCarForDoc?.license_plate }}
+                        </span>
+                    </div>
+                </div>
+            </div>
+            <button @click="showDocModal = false" class="p-2 text-slate-400 hover:text-rose-500 hover:bg-rose-50 rounded-full transition-all">
+                <X class="w-5 h-5" />
+            </button>
+        </div>
+
+        <form @submit.prevent="submitDoc" enctype="multipart/form-data" class="p-7 space-y-5">
+            
+            <div class="space-y-2">
+                <label class="text-[10px] font-black uppercase tracking-[0.15em] text-slate-400 ml-1">Document Category</label>
+                <div class="relative group">
+                    <select v-model="docForm.type" 
+                        class="w-full pl-4 pr-10 py-3.5 bg-slate-50 border border-slate-200 rounded-2xl focus:ring-4 focus:ring-indigo-500/10 focus:border-indigo-500 transition-all text-sm font-bold text-slate-700 appearance-none cursor-pointer">
+                        <option value="insurance">🛡️ Insurance Policy</option>
+                        <option value="road_tax">🛣️ Road Tax</option>
+                    </select>
+                    <div class="absolute right-4 top-1/2 -translate-y-1/2 pointer-events-none text-slate-400 group-hover:text-indigo-500 transition-colors">
+                        <ChevronDown class="w-4 h-4" />
+                    </div>
+                </div>
+            </div>
+
+            <div class="space-y-2">
+                <label class="text-[10px] font-black uppercase tracking-[0.15em] text-slate-400 ml-1">File Attachment</label>
+                <div class="relative group">
+                    <input type="file" @change="handleDocFileChange" accept=".pdf,.jpg,.jpeg,.png" class="absolute inset-0 w-full h-full opacity-0 cursor-pointer z-20" required />
+                    
+                    <div :class="[
+                        'border-2 border-dashed rounded-[1.5rem] p-6 flex flex-col items-center justify-center transition-all duration-300 z-10',
+                        docForm.file_name 
+                            ? 'border-indigo-500 bg-indigo-50/30 shadow-inner' 
+                            : 'border-slate-200 bg-slate-50 group-hover:border-indigo-400 group-hover:bg-indigo-50/50'
+                    ]">
+                        <div class="mb-2">
+                            <CheckCircle2 v-if="docForm.file_name" class="h-10 w-10 text-indigo-600 animate-in zoom-in" />
+                            <FileUp v-else class="h-10 w-10 text-slate-300 group-hover:text-indigo-500 transition-colors" />
+                        </div>
+
+                        <div class="text-center">
+                            <template v-if="docForm.file_name">
+                                <p class="text-sm font-bold text-indigo-900 leading-none">Ready to Upload</p>
+                                <p class="text-[11px] text-indigo-600 mt-1 font-mono font-bold truncate max-w-[220px] bg-white px-2 py-0.5 rounded border border-indigo-100">
+                                    {{ docForm.file_name }}
+                                </p>
+                            </template>
+                            <template v-else>
+                                <p class="text-sm font-bold text-slate-600">Select Document File</p>
+                                <p class="text-[10px] text-slate-400 mt-1 uppercase font-bold tracking-tighter">PDF, JPG or PNG (5MB)</p>
+                            </template>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="grid grid-cols-2 gap-4">
+                <div class="space-y-2">
+                    <label class="text-[10px] font-black uppercase tracking-widest text-slate-400 ml-1">Expiry Date</label>
+                    <div class="relative">
+                        <Calendar class="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
+                        <input type="date" v-model="docForm.expiry_date" 
+                            class="w-full pl-11 pr-4 py-3 bg-slate-50 border border-slate-200 rounded-xl focus:ring-4 focus:ring-indigo-500/10 focus:border-indigo-500 text-sm font-bold text-slate-700 transition-all" required />
+                    </div>
+                </div>
+
+                <div class="space-y-2">
+                    <label class="text-[10px] font-black uppercase tracking-widest text-slate-400 ml-1">Status</label>
+                    <div class="relative">
+                        <select v-model="docForm.status" 
+                            :class="[
+                                'w-full pl-3 pr-10 py-3 border rounded-xl text-sm font-bold appearance-none transition-all',
+                                docForm.status === 'valid' ? 'bg-emerald-50 border-emerald-200 text-emerald-700' : 
+                                docForm.status === 'expiring' ? 'bg-amber-50 border-amber-200 text-amber-700' : 
+                                'bg-rose-50 border-rose-200 text-rose-700'
+                            ]">
+                            <option value="valid">✅ Valid</option>
+                            <option value="expiring">⚠️ Expiring</option>
+                            <option value="expired">❌ Expired</option>
+                        </select>
+                        <ChevronDown class="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 opacity-50 pointer-events-none" />
+                    </div>
+                </div>
+            </div>
+
+            <div class="flex items-center gap-3 pt-4">
+                <button type="button" @click="showDocModal = false" 
+                    class="flex-1 px-4 py-4 border border-slate-200 rounded-2xl text-[11px] font-black text-slate-400 hover:bg-slate-50 transition-all uppercase tracking-widest">
+                    Cancel
+                </button>
+                <button type="submit" :disabled="docForm.processing" 
+                    class="flex-[2] px-4 py-4 bg-slate-900 hover:bg-indigo-600 text-white rounded-2xl text-[11px] font-black shadow-xl shadow-slate-200 transition-all active:scale-[0.98] disabled:opacity-50 flex items-center justify-center gap-2 uppercase tracking-[0.15em]">
+                    <Loader2 v-if="docForm.processing" class="h-4 w-4 animate-spin" />
+                    {{ docForm.processing ? 'Uploading...' : 'Confirm Upload' }}
+                </button>
+            </div>
+        </form>
+    </div>
+</div>
     <!-- Payment Modal -->
-    <div v-if="showPaymentModal" class="fixed inset-0 z-50 overflow-y-auto">
-        <div class="fixed inset-0 bg-black/50 transition-opacity" @click="showPaymentModal = false"></div>
-        <div class="flex min-h-full items-center justify-center p-4">
-            <div class="relative w-full max-w-md bg-white rounded-xl shadow-xl p-6">
-                <h3 class="text-lg font-medium mb-4">Record Payment for {{ selectedCarForPayment?.license_plate }}</h3>
-                <form @submit.prevent="submitPayment" enctype="multipart/form-data">
-                    <div class="space-y-4">
-                        <div>
-                            <label class="modal-label">Amount (RM)</label>
-                            <input type="number" step="0.01" v-model="paymentForm.amount" class="modal-input" required />
-                        </div>
-                        <div>
-                            <label class="modal-label">Payment Date</label>
-                            <input type="date" v-model="paymentForm.paid_date" class="modal-input" required />
-                        </div>
-                        <div>
-                            <label class="modal-label">Due Date (29th)</label>
-                            <input type="date" v-model="paymentForm.due_date" class="modal-input bg-slate-100" readonly required />
-                        </div>
-                        <div>
-                            <label class="modal-label">Proof of Payment</label>
-                            <input type="file" @change="handlePaymentProofChange" accept=".pdf,.jpg,.jpeg,.png" class="mt-1 block w-full" />
-                        </div>
+
+  <div v-if="showPaymentModal" class="fixed inset-0 z-50 flex items-center justify-center p-4 sm:p-6">
+    <div class="fixed inset-0 bg-slate-900/60 backdrop-blur-sm transition-opacity" @click="showPaymentModal = false"></div>
+
+    <div class="relative w-full max-w-lg bg-white rounded-[2rem] shadow-2xl overflow-hidden transform transition-all animate-in fade-in zoom-in duration-200">
+        
+        <div class="bg-slate-50 border-b border-slate-100 p-8 flex items-center justify-between">
+            <div class="flex items-center gap-4">
+                <div class="h-12 w-12 bg-emerald-100 text-emerald-600 rounded-2xl flex items-center justify-center shadow-sm">
+                    <CreditCard class="h-6 w-6" />
+                </div>
+                <div>
+                    <h3 class="text-xl font-black text-slate-900 leading-tight">Record Payment</h3>
+                    <div class="flex items-center gap-2 mt-1">
+                        <span class="px-2 py-0.5 bg-slate-200 text-slate-700 rounded text-[10px] font-mono font-bold tracking-wider uppercase">
+                            {{ selectedCarForPayment?.license_plate }}
+                        </span>
+                        <span class="text-xs text-slate-400 font-medium">{{ selectedCarForPayment?.model }}</span>
                     </div>
-                    <div class="mt-6 flex justify-end gap-3">
-                        <button type="button" @click="showPaymentModal = false" class="px-4 py-2 border border-slate-300 rounded-lg text-sm font-medium text-slate-700 bg-white hover:bg-slate-50">Cancel</button>
-                        <button type="submit" :disabled="paymentForm.processing" class="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg text-sm font-medium shadow-sm disabled:opacity-50">
-                            {{ paymentForm.processing ? 'Saving...' : 'Save Payment' }}
-                        </button>
-                    </div>
-                </form>
+                </div>
             </div>
+            <button @click="showPaymentModal = false" class="text-slate-400 hover:text-slate-600 transition-colors p-2 hover:bg-white rounded-full shadow-sm">
+                <X class="h-6 w-6" />
+            </button>
         </div>
+
+        <form @submit.prevent="submitPayment" class="p-8">
+            <div class="space-y-6">
+                
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+                    <div class="space-y-2">
+                        <label class="text-[10px] font-bold uppercase tracking-widest text-slate-400">Amount (RM)</label>
+                        <div class="relative">
+                            <span class="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400 font-bold text-sm">RM</span>
+                            <input type="number" step="0.01" v-model="paymentForm.amount" 
+                                class="w-full pl-12 pr-4 py-3 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500 transition-all font-bold text-slate-900" 
+                                placeholder="0.00" required />
+                        </div>
+                    </div>
+
+                    <div class="space-y-2">
+                        <label class="text-[10px] font-bold uppercase tracking-widest text-slate-400">Payment Date</label>
+                        <div class="relative">
+                            <Calendar class="absolute left-4 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400" />
+                            <input type="date" v-model="paymentForm.paid_date" 
+                                class="w-full pl-12 pr-4 py-3 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500 transition-all font-medium text-slate-700" 
+                                required />
+                        </div>
+                    </div>
+                </div>
+
+                <div class="p-4 bg-amber-50 rounded-2xl border border-amber-100 flex items-center justify-between shadow-sm">
+                    <div class="flex items-center gap-3">
+                        <div class="bg-white p-2 rounded-xl shadow-sm">
+                            <Clock class="h-5 w-5 text-amber-600" />
+                        </div>
+                        <div>
+                            <p class="text-[10px] font-bold text-amber-700 uppercase tracking-tight">Billing Period End</p>
+                            <p class="text-sm font-black text-amber-900 leading-none mt-0.5">{{ paymentForm.due_date || 'N/A' }}</p>
+                        </div>
+                    </div>
+                    <div class="text-[10px] font-bold bg-amber-200/50 text-amber-700 px-2 py-1 rounded-lg">SYSTEM GENERATED</div>
+                </div>
+
+                <div class="space-y-2">
+                    <label class="text-[10px] font-bold uppercase tracking-widest text-slate-400">Proof of Payment</label>
+                    <div class="relative group">
+                        <input type="file" @change="handlePaymentProofChange" accept=".pdf,.jpg,.jpeg,.png" 
+                            class="absolute inset-0 w-full h-full opacity-0 cursor-pointer z-20" />
+                        
+                        <div :class="[
+                            'border-2 border-dashed rounded-2xl p-6 flex flex-col items-center justify-center transition-all duration-300 z-10',
+                            paymentForm.receipt_name 
+                                ? 'border-emerald-500 bg-emerald-50 shadow-inner' 
+                                : 'border-slate-200 bg-slate-50 group-hover:border-emerald-400 group-hover:bg-emerald-50/50'
+                        ]">
+                            
+                            <div class="mb-2">
+                                <CheckCircle2 v-if="paymentForm.receipt_name" class="h-10 w-10 text-emerald-600 animate-in zoom-in" />
+                                <UploadCloud v-else class="h-10 w-10 text-slate-300 group-hover:text-emerald-500 transition-colors" />
+                            </div>
+
+                            <div class="text-center">
+                                <template v-if="paymentForm.receipt_name">
+                                    <p class="text-sm font-bold text-emerald-900 tracking-tight">Receipt Attached</p>
+                                    <p class="text-[11px] text-emerald-600 mt-1 font-mono font-bold bg-white px-2 py-0.5 rounded border border-emerald-100 truncate max-w-[200px]">
+                                        {{ paymentForm.receipt_name }}
+                                    </p>
+                                    <p class="text-[9px] text-emerald-400 mt-2 uppercase font-black">Click to replace file</p>
+                                </template>
+                                <template v-else>
+                                    <p class="text-sm font-bold text-slate-600">Click or drag receipt here</p>
+                                    <p class="text-[10px] text-slate-400 mt-1 uppercase font-bold tracking-tighter">PDF, JPG, or PNG (Max 5MB)</p>
+                                </template>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="mt-10 flex flex-wrap gap-4">
+                <button type="button" @click="showPaymentModal = false" 
+                    class="flex-1 px-6 py-4 border border-slate-200 rounded-xl text-xs font-black uppercase tracking-widest text-slate-400 hover:bg-slate-50 hover:text-slate-600 transition-all">
+                    Cancel
+                </button>
+                <button type="submit" :disabled="paymentForm.processing" 
+                    class="flex-[2] px-6 py-4 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-black uppercase tracking-widest shadow-lg shadow-emerald-200/50 transition-all disabled:opacity-50 disabled:scale-95 flex items-center justify-center gap-3">
+                    <Loader2 v-if="paymentForm.processing" class="h-5 w-5 animate-spin" />
+                    {{ paymentForm.processing ? 'Recording Transaction...' : 'Complete Payment' }}
+                </button>
+            </div>
+        </form>
     </div>
+</div>
 
     <!-- Edit Lease Modal -->
     <div v-if="showEditLeaseModal" class="fixed inset-0 z-50 overflow-y-auto" @click.self="showEditLeaseModal = false">
