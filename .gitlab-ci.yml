@@ -5,27 +5,18 @@ stages:
 # Job: Run git pull and other commands directly on the server
 deploy_job:
   stage: deploy
-  image: centos:latest  # Using CentOS image
+  image: php:8.2-cli
 
   script:
-    # Navigate to the application directory
+    - apt-get update && apt-get install -y git unzip nodejs npm
     - cd /home/xpertsmy/public_html/evlease.xperts.my
-
-    # Ensure there are no local changes before pulling the latest code
     - git reset --hard
-
-    # Pull the latest code from the repository
     - git pull origin main
-
-    # Laravel commands
     - composer install --no-dev --optimize-autoloader --ignore-platform-reqs
     - php artisan migrate --force
-    # - php artisan db:seed --force
     - php artisan optimize:clear
-
-    # Vue.js commands (uncomment if needed)
     - npm install
     - npm run build
 
   only:
-    - main  # Run this job only on the main branch
+    - main
