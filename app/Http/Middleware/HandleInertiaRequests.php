@@ -35,6 +35,9 @@ public function share(Request $request): array
         'auth' => [
             'user' => $request->user(),
         ],
+        'flash' => [
+            'success' => $request->session()->get('success'),
+        ],
         'unreadMessagesCount' => $request->user()
             ? \App\Models\Message::where('recipient_id', $request->user()->id)
                 ->whereNull('read_at')

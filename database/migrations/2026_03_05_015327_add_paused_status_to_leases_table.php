@@ -9,11 +9,16 @@ return new class extends Migration
 {
     public function up()
     {
-        DB::statement("ALTER TABLE leases MODIFY COLUMN status ENUM('active', 'pending', 'ended', 'paused') NOT NULL DEFAULT 'active'");
+        // Use MySQL-specific ALTER only when not running on SQLite.
+        if (DB::getDriverName() !== 'sqlite') {
+            DB::statement("ALTER TABLE leases MODIFY COLUMN status ENUM('active', 'pending', 'ended', 'paused') NOT NULL DEFAULT 'active'");
+        }
     }
 
     public function down()
     {
-        DB::statement("ALTER TABLE leases MODIFY COLUMN status ENUM('active', 'pending', 'ended') NOT NULL DEFAULT 'active'");
+        if (DB::getDriverName() !== 'sqlite') {
+            DB::statement("ALTER TABLE leases MODIFY COLUMN status ENUM('active', 'pending', 'ended') NOT NULL DEFAULT 'active'");
+        }
     }
 };

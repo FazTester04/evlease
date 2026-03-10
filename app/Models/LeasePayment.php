@@ -40,10 +40,10 @@ class LeasePayment extends Model
   public function getProofUrlAttribute()
 {
     if ($this->document && $this->document->file_path) {
-        return Storage::url($this->document->file_path);
+        return url('/files/' . $this->document->file_path);
     }
     if ($this->receipt_path) {
-        return Storage::url($this->receipt_path);
+        return url('/files/' . $this->receipt_path);
     }
     return null;
 }

@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import AppSidebarLayout from '@/layouts/app/AppSidebarLayout.vue';
 import { router, usePage, useForm, Link } from '@inertiajs/vue3';
+const page = usePage();
 import { ref, watch } from 'vue';
 import { 
     UserCog, 
@@ -17,10 +18,17 @@ import {
 
 const props = defineProps<{
     drivers: any[];
-    filters: { search?: string };
+    filters: { search?: string; status?: string };
 }>();
 
 // ---------- Helpers ----------
+// License expiry must be a future date (min = tomorrow for date input)
+const minLicenseExpiryDate = (() => {
+    const d = new Date();
+    d.setDate(d.getDate() + 1);
+    return d.toISOString().slice(0, 10);
+})();
+
 const formatDate = (date: string | null) => {
     if (!date) return '—';
     return new Date(date).toLocaleDateString('en-GB', {
@@ -37,13 +45,18 @@ const statusBadgeClass = (status: string) => {
     }
 };
 
-// ---------- Search ----------
+// ---------- Search & Filters ----------
 const search = ref(props.filters?.search || '');
+const statusFilter = ref(props.filters?.status || '');
 let searchTimeout: ReturnType<typeof setTimeout>;
-watch(search, (value) => {
+watch([search, statusFilter], ([value, status]) => {
     clearTimeout(searchTimeout);
     searchTimeout = setTimeout(() => {
-        router.get('/admin/drivers', { search: value }, { preserveState: true, preserveScroll: true });
+        router.get(
+            '/admin/drivers',
+            { search: value, status: status || undefined },
+            { preserveState: true, preserveScroll: true },
+        );
     }, 300);
 });
 
@@ -56,6 +69,7 @@ const createForm = useForm({
     phone: '',
     date_of_birth: '',
     address: '',
+    remarks: '',
     driver_license: '',
     license_expiry: '',
     license_document: null as File | null,
@@ -66,21 +80,20 @@ const createForm = useForm({
 const icFileName = ref('');
 const licenseFileName = ref('');
 
-
-const handleLicenseDocumentChange = (e) => {
-    const file = e.target.files[0];
+const handleLicenseDocumentChange = (e: Event) => {
+    const target = e.target as HTMLInputElement;
+    const file = target.files?.[0];
     if (file) {
         createForm.license_document = file;
-        // UPDATE THIS LINE:
-        createForm.license_file_name = file.name; 
+        licenseFileName.value = file.name;
     }
 };
-const handleICFileChange = (e) => {
-    const file = e.target.files[0];
+const handleICFileChange = (e: Event) => {
+    const target = e.target as HTMLInputElement;
+    const file = target.files?.[0];
     if (file) {
         createForm.ic_file = file;
-        // UPDATE THIS LINE:
-        createForm.ic_file_name = file.name;
+        icFileName.value = file.name;
     }
 };
 
@@ -91,6 +104,14 @@ const submitCreate = () => {
         onSuccess: () => {
             showCreateModal.value = false;
             createForm.reset();
+            icFileName.value = '';
+            licenseFileName.value = '';
+        },
+        onError: () => {
+            // Scroll modal to top so user sees error summary
+            const form = document.querySelector('.relative.w-full.max-w-2xl form');
+            const scrollParent = form?.closest('.overflow-y-auto');
+            if (scrollParent) scrollParent.scrollTop = 0;
         },
     });
 };
@@ -163,6 +184,29 @@ const deleteDriver = (id: number) => {
         router.delete(`/admin/drivers/${id}`, { preserveScroll: true });
     }
 };
+
+// Notification: show after add driver, dismissible and auto-hide
+const showSuccessNotification = ref(false);
+const successMessage = ref('');
+let successNotificationTimeout: ReturnType<typeof setTimeout>;
+
+function showDriverAddedNotification(message: string) {
+    successMessage.value = message;
+    showSuccessNotification.value = true;
+    clearTimeout(successNotificationTimeout);
+    successNotificationTimeout = setTimeout(() => {
+        showSuccessNotification.value = false;
+    }, 6000);
+}
+
+function dismissSuccessNotification() {
+    showSuccessNotification.value = false;
+    clearTimeout(successNotificationTimeout);
+}
+
+watch(() => page.props.flash?.success, (msg) => {
+    if (msg) showDriverAddedNotification(msg);
+}, { immediate: true });
 </script>
 
 <template>
@@ -180,15 +224,101 @@ const deleteDriver = (id: number) => {
                 </button>
             </div>
 
-            <!-- Search -->
-            <div class="mb-6 flex items-center">
+            <!-- Driver added notification -->
+            <Transition
+                enter-active-class="transition duration-300 ease-out"
+                enter-from-class="opacity-0 translate-y-2"
+                enter-to-class="opacity-100 translate-y-0"
+                leave-active-class="transition duration-200 ease-in"
+                leave-from-class="opacity-100 translate-y-0"
+                leave-to-class="opacity-0 translate-y-2"
+            >
+                <div
+                    v-if="showSuccessNotification"
+                    class="mb-4 flex items-center gap-4 px-5 py-4 rounded-xl bg-emerald-50 border border-emerald-200 shadow-sm"
+                >
+                    <div class="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-emerald-500 text-white">
+                        <svg class="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7" />
+                        </svg>
+                    </div>
+                    <p class="flex-1 text-sm font-semibold text-emerald-800">{{ successMessage }}</p>
+                    <button
+                        type="button"
+                        @click="dismissSuccessNotification"
+                        class="shrink-0 rounded-lg p-1.5 text-emerald-600 hover:bg-emerald-100 transition-colors"
+                        aria-label="Dismiss"
+                    >
+                        <X class="h-5 w-5" />
+                    </button>
+                </div>
+            </Transition>
+
+            <!-- Search & Status Filters -->
+            <div class="mb-6 flex flex-col md:flex-row items-start md:items-center gap-4">
                 <div class="relative w-full md:w-96">
                     <div class="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
                         <svg class="h-5 w-5 text-slate-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
                         </svg>
                     </div>
-                    <input v-model="search" type="text" placeholder="Search by name, email, IC, or license..." class="block w-full pl-10 pr-3 py-2.5 border border-slate-200 rounded-full text-sm placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 shadow-sm bg-white" />
+                    <input
+                        v-model="search"
+                        type="text"
+                        placeholder="Search by name, email, IC, or license..."
+                        class="block w-full pl-10 pr-3 py-2.5 border border-slate-200 rounded-full text-sm placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 shadow-sm bg-white"
+                    />
+                </div>
+
+                <div class="flex flex-wrap gap-2">
+                    <button
+                        type="button"
+                        @click="statusFilter = ''"
+                        :class="[
+                            'px-3 py-1.5 rounded-full text-xs font-semibold border transition-colors',
+                            !statusFilter
+                                ? 'bg-indigo-600 text-white border-indigo-600'
+                                : 'bg-white text-slate-600 border-slate-200 hover:bg-slate-50',
+                        ]"
+                    >
+                        All Drivers
+                    </button>
+                    <button
+                        type="button"
+                        @click="statusFilter = 'available'"
+                        :class="[
+                            'px-3 py-1.5 rounded-full text-xs font-semibold border transition-colors',
+                            statusFilter === 'available'
+                                ? 'bg-emerald-600 text-white border-emerald-600'
+                                : 'bg-white text-slate-600 border-slate-200 hover:bg-slate-50',
+                        ]"
+                    >
+                        Available
+                    </button>
+                    <button
+                        type="button"
+                        @click="statusFilter = 'unavailable'"
+                        :class="[
+                            'px-3 py-1.5 rounded-full text-xs font-semibold border transition-colors',
+                            statusFilter === 'unavailable'
+                                ? 'bg-rose-600 text-white border-rose-600'
+                                : 'bg-white text-slate-600 border-slate-200 hover:bg-slate-50',
+                        ]"
+                    >
+                        Unavailable
+                    </button>
+                    <button
+                        type="button"
+                        @click="statusFilter = 'on_lease'"
+                        :class="[
+                            'px-3 py-1.5 rounded-full text-xs font-semibold border transition-colors',
+                            statusFilter === 'on_lease'
+                                ? 'bg-amber-600 text-white border-amber-600'
+                                : 'bg-white text-slate-600 border-slate-200 hover:bg-slate-50',
+                        ]"
+                    >
+                        On Lease
+                    </button>
                 </div>
             </div>
 
@@ -201,7 +331,7 @@ const deleteDriver = (id: number) => {
                                 <th class="px-6 py-4 text-xs font-semibold text-slate-500 uppercase tracking-wider">Driver / IC</th>
                                 <th class="px-6 py-4 text-xs font-semibold text-slate-500 uppercase tracking-wider">License</th>
                                 <th class="px-6 py-4 text-xs font-semibold text-slate-500 uppercase tracking-wider">License Expiry</th>
-                                <th class="px-6 py-4 text-xs font-semibold text-slate-500 uppercase tracking-wider">Active Lease</th>
+                                <th class="px-6 py-4 text-xs font-semibold text-slate-500 uppercase tracking-wider">Lease Status</th>
                                 <th class="px-6 py-4 text-xs font-semibold text-slate-500 uppercase tracking-wider text-right">Actions</th>
                             </tr>
                         </thead>
@@ -219,18 +349,53 @@ const deleteDriver = (id: number) => {
                                     <a v-if="driver.license_document?.file_url" :href="driver.license_document.file_url" target="_blank" class="text-xs text-indigo-600 hover:underline">View License</a>
                                 </td>
                                 <td class="px-6 py-4 align-top">
-                                    <span v-if="driver.license_document?.expiry_date" class="inline-flex items-center px-2.5 py-1 rounded-full text-xs font-medium" :class="statusBadgeClass(driver.license_document.status)">
+                                    <span
+                                        v-if="driver.license_document?.expiry_date"
+                                        class="inline-flex items-center px-2.5 py-1 rounded-full text-xs font-medium"
+                                        :class="[
+                                            statusBadgeClass(driver.license_document.status),
+                                            driver.license_document.status === 'expired'
+                                                ? 'animate-blink-red bg-red-500/90 text-white font-semibold'
+                                                : '',
+                                        ]"
+                                    >
                                         {{ formatDate(driver.license_document.expiry_date) }}
+                                        <span v-if="driver.license_document.status === 'expired'" class="ml-1">(Expired)</span>
                                     </span>
-                                    <span v-else class="text-slate-400">—</span>
+                                    <span v-else class="inline-flex items-center px-2.5 py-1 rounded-full text-xs font-medium animate-blink-red bg-red-500/90 text-white">No license / Expired</span>
                                 </td>
                                 <td class="px-6 py-4 align-top">
-                                    <div v-if="driver.active_lease" class="text-sm">
-                                        <div>{{ driver.active_lease.car?.license_plate }}</div>
-                                        <div class="text-xs text-slate-500">{{ driver.active_lease.car?.make }} {{ driver.active_lease.car?.model }}</div>
-                                        <div class="text-xs text-slate-500">Since {{ formatDate(driver.active_lease.start_date) }}</div>
+                                    <div class="flex flex-col gap-1 text-sm">
+                                        <span
+                                            class="inline-flex items-center px-2.5 py-1 rounded-full text-xs font-semibold"
+                                            :class="{
+                                                'bg-emerald-100 text-emerald-700': driver.availability_status === 'available',
+                                                'bg-amber-100 text-amber-700': driver.availability_status === 'on_lease',
+                                                'bg-rose-100 text-rose-700': driver.availability_status === 'unavailable',
+                                            }"
+                                        >
+                                            {{
+                                                driver.availability_status === 'on_lease'
+                                                    ? 'On Lease'
+                                                    : driver.availability_status === 'unavailable'
+                                                        ? 'Unavailable'
+                                                        : 'Available'
+                                            }}
+                                        </span>
+
+                                        <div v-if="driver.active_lease" class="text-xs text-slate-500">
+                                            <div>{{ driver.active_lease.car?.license_plate }}</div>
+                                            <div>{{ driver.active_lease.car?.make }} {{ driver.active_lease.car?.model }}</div>
+                                            <div>Since {{ formatDate(driver.active_lease.start_date) }}</div>
+                                            <Link
+                                                href="/admin/leases"
+                                                class="mt-0.5 inline-flex items-center text-[11px] text-indigo-600 hover:underline"
+                                            >
+                                                View lease details
+                                            </Link>
+                                        </div>
+                                        <span v-else class="text-xs text-slate-400">No active lease</span>
                                     </div>
-                                    <span v-else class="text-slate-400 text-sm">No active lease</span>
                                 </td>
 <td class="px-6 py-4 align-middle text-right">
     <div class="flex items-center justify-end gap-1">
@@ -299,6 +464,14 @@ const deleteDriver = (id: number) => {
         </div>
 
         <form @submit.prevent="submitCreate" enctype="multipart/form-data" class="p-8">
+            <!-- Validation errors summary -->
+            <div v-if="Object.keys(createForm.errors).length > 0" class="mb-6 p-4 rounded-2xl bg-red-50 border border-red-200">
+                <p class="text-sm font-bold text-red-800 mb-2">Please fix the following:</p>
+                <ul class="list-disc list-inside text-xs text-red-700 space-y-1">
+                    <li v-for="(msg, key) in createForm.errors" :key="key">{{ msg }}</li>
+                </ul>
+            </div>
+
             <div class="space-y-10">
                 
                 <div class="space-y-6">
@@ -315,10 +488,16 @@ const deleteDriver = (id: number) => {
                             <p v-if="createForm.errors.name" class="text-[10px] text-rose-500 font-bold uppercase mt-1">{{ createForm.errors.name }}</p>
                         </div>
 
-                        <div class="space-y-2">
+                                <div class="space-y-2">
                             <label class="text-[10px] font-black uppercase tracking-widest text-slate-400 ml-1">Email Address</label>
-                            <input v-model="createForm.email" type="email" 
-                                class="w-full px-4 py-3.5 bg-slate-50 border-transparent rounded-2xl focus:bg-white focus:ring-4 focus:ring-indigo-500/10 focus:border-indigo-500 transition-all font-medium text-slate-700 shadow-inner" placeholder="driver@example.com" />
+                            <input
+                                v-model="createForm.email"
+                                type="email"
+                                required
+                                class="w-full px-4 py-3.5 bg-slate-50 border-transparent rounded-2xl focus:bg-white focus:ring-4 focus:ring-indigo-500/10 focus:border-indigo-500 transition-all font-medium text-slate-700 shadow-inner"
+                                placeholder="driver@example.com"
+                            />
+                            <p v-if="createForm.errors.email" class="text-[10px] text-rose-500 font-bold uppercase mt-1">{{ createForm.errors.email }}</p>
                         </div>
 
                         <div class="space-y-2">
@@ -328,15 +507,22 @@ const deleteDriver = (id: number) => {
                                 <input v-model="createForm.password" type="password" 
                                     class="w-full pl-11 pr-4 py-3.5 bg-slate-50 border-transparent rounded-2xl focus:bg-white focus:ring-4 focus:ring-indigo-500/10 focus:border-indigo-500 transition-all font-medium text-slate-700 shadow-inner" required />
                             </div>
+                            <p v-if="createForm.errors.password" class="text-[10px] text-rose-500 font-bold uppercase mt-1">{{ createForm.errors.password }}</p>
                         </div>
 
-                        <div class="space-y-2">
+                                <div class="space-y-2">
                             <label class="text-[10px] font-black uppercase tracking-widest text-slate-400 ml-1">Phone Number</label>
                             <div class="relative">
                                 <Phone class="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-300" />
-                                <input v-model="createForm.phone" type="text" 
-                                    class="w-full pl-11 pr-4 py-3.5 bg-slate-50 border-transparent rounded-2xl focus:bg-white focus:ring-4 focus:ring-indigo-500/10 focus:border-indigo-500 transition-all font-bold text-slate-900 shadow-inner" placeholder="+60..." />
+                                <input
+                                    v-model="createForm.phone"
+                                    type="text"
+                                    required
+                                    class="w-full pl-11 pr-4 py-3.5 bg-slate-50 border-transparent rounded-2xl focus:bg-white focus:ring-4 focus:ring-indigo-500/10 focus:border-indigo-500 transition-all font-bold text-slate-900 shadow-inner"
+                                    placeholder="+60123456789"
+                                />
                             </div>
+                            <p v-if="createForm.errors.phone" class="text-[10px] text-rose-500 font-bold uppercase mt-1">{{ createForm.errors.phone }}</p>
                         </div>
                     </div>
                 </div>
@@ -350,13 +536,28 @@ const deleteDriver = (id: number) => {
                     <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
                         <div class="space-y-2">
                             <label class="text-[10px] font-black uppercase tracking-widest text-slate-400 ml-1">IC / National ID Number *</label>
-                            <input v-model="createForm.ic_number" type="text" 
-                                class="w-full px-4 py-3.5 bg-slate-50 border-transparent rounded-2xl focus:bg-white focus:ring-4 focus:ring-indigo-500/10 focus:border-indigo-500 transition-all font-mono font-black text-slate-900 shadow-inner" required />
+                            <input
+                                v-model="createForm.ic_number"
+                                type="text"
+                                required
+                                maxlength="12"
+                                minlength="12"
+                                inputmode="numeric"
+                                pattern="[0-9]{12}"
+                                class="w-full px-4 py-3.5 bg-slate-50 border-transparent rounded-2xl focus:bg-white focus:ring-4 focus:ring-indigo-500/10 focus:border-indigo-500 transition-all font-mono font-black text-slate-900 shadow-inner"
+                                placeholder="e.g. 991231011234"
+                            />
+                            <p v-if="createForm.errors.ic_number" class="text-[10px] text-rose-500 font-bold uppercase mt-1">{{ createForm.errors.ic_number }}</p>
                         </div>
                         <div class="space-y-2">
                             <label class="text-[10px] font-black uppercase tracking-widest text-slate-400 ml-1">Date of Birth</label>
-                            <input v-model="createForm.date_of_birth" type="date" 
-                                class="w-full px-4 py-3.5 bg-slate-50 border-transparent rounded-2xl shadow-inner text-sm font-bold text-slate-700" />
+                            <input
+                                v-model="createForm.date_of_birth"
+                                type="date"
+                                required
+                                class="w-full px-4 py-3.5 bg-slate-50 border-transparent rounded-2xl shadow-inner text-sm font-bold text-slate-700"
+                            />
+                            <p v-if="createForm.errors.date_of_birth" class="text-[10px] text-rose-500 font-bold uppercase mt-1">{{ createForm.errors.date_of_birth }}</p>
                         </div>
                     </div>
 
@@ -364,6 +565,18 @@ const deleteDriver = (id: number) => {
                         <label class="text-[10px] font-black uppercase tracking-widest text-slate-400 ml-1">Resident Address</label>
                         <textarea v-model="createForm.address" rows="2" 
                             class="w-full px-4 py-4 bg-white border-transparent rounded-2xl focus:ring-4 focus:ring-indigo-500/10 focus:border-indigo-500 transition-all text-sm font-medium resize-none shadow-sm" placeholder="Full residential address..."></textarea>
+                    </div>
+
+                    <div class="p-6 bg-slate-50 border border-slate-100 rounded-[2rem] space-y-4">
+                        <label class="text-[10px] font-black uppercase tracking-widest text-slate-400 ml-1">
+                            Remarks <span class="text-slate-400 font-normal">(optional)</span>
+                        </label>
+                        <textarea
+                            v-model="createForm.remarks"
+                            rows="2"
+                            class="w-full px-4 py-4 bg-white border-transparent rounded-2xl focus:ring-4 focus:ring-indigo-500/10 focus:border-indigo-500 transition-all text-sm font-medium resize-none shadow-sm"
+                            placeholder="Internal notes about this driver..."
+                        ></textarea>
                     </div>
                 </div>
 
@@ -376,61 +589,77 @@ const deleteDriver = (id: number) => {
                     <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
                         <div class="space-y-2">
                             <label class="text-[10px] font-black uppercase tracking-widest text-slate-400 ml-1">License No.</label>
-                            <input v-model="createForm.driver_license" type="text" class="w-full px-4 py-3.5 bg-slate-50 border-transparent rounded-2xl shadow-inner text-sm font-bold" />
+                            <input
+                                v-model="createForm.driver_license"
+                                type="text"
+                                required
+                                class="w-full px-4 py-3.5 bg-slate-50 border-transparent rounded-2xl shadow-inner text-sm font-bold"
+                            />
+                            <p v-if="createForm.errors.driver_license" class="text-[10px] text-rose-500 font-bold uppercase mt-1">{{ createForm.errors.driver_license }}</p>
                         </div>
                         <div class="space-y-2">
-                            <label class="text-[10px] font-black uppercase tracking-widest text-slate-400 ml-1">License Expiry</label>
-                            <input v-model="createForm.license_expiry" type="date" class="w-full px-4 py-3.5 bg-slate-50 border-transparent rounded-2xl shadow-inner text-sm font-bold" />
+                            <label class="text-[10px] font-black uppercase tracking-widest text-slate-400 ml-1">License Expiry *</label>
+                            <input
+                                v-model="createForm.license_expiry"
+                                type="date"
+                                required
+                                :min="minLicenseExpiryDate"
+                                class="w-full px-4 py-3.5 bg-slate-50 border-transparent rounded-2xl shadow-inner text-sm font-bold"
+                            />
+                            <p class="text-[10px] text-slate-500 mt-1">Must be a future date.</p>
+                            <p v-if="createForm.errors.license_expiry" class="text-[10px] text-rose-500 font-bold uppercase mt-1">{{ createForm.errors.license_expiry }}</p>
                         </div>
                     </div>
 
                     <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
                         <label :class="[
                             'relative group p-4 border-2 border-dashed rounded-2xl transition-all cursor-pointer flex items-center gap-4',
-                            createForm.ic_file_name 
+                            icFileName 
                                 ? 'bg-emerald-50 border-emerald-400 shadow-sm' 
                                 : 'bg-slate-50 border-slate-200 hover:bg-white hover:border-indigo-400'
                         ]">
                             <div :class="[
                                 'h-10 w-10 rounded-xl flex items-center justify-center shadow-sm transition-colors',
-                                createForm.ic_file_name ? 'bg-emerald-500 text-white' : 'bg-white text-slate-400 group-hover:text-indigo-600'
+                                icFileName ? 'bg-emerald-500 text-white' : 'bg-white text-slate-400 group-hover:text-indigo-600'
                             ]">
-                                <CheckCircle2 v-if="createForm.ic_file_name" class="w-5 h-5" />
+                                <CheckCircle2 v-if="icFileName" class="w-5 h-5" />
                                 <FileText v-else class="w-5 h-5" />
                             </div>
                             <div class="flex-1 min-w-0">
-                                <p :class="['text-xs font-black uppercase tracking-tight', createForm.ic_file_name ? 'text-emerald-700' : 'text-slate-700']">
+                                <p :class="['text-xs font-black uppercase tracking-tight', icFileName ? 'text-emerald-700' : 'text-slate-700']">
                                     IC Document *
                                 </p>
                                 <p class="text-[10px] truncate text-slate-500 font-medium">
-                                    {{ createForm.ic_file_name || 'Upload ID Copy' }}
+                                    {{ icFileName || 'Upload ID Copy' }}
                                 </p>
                             </div>
-                            <input type="file" @change="handleICFileChange" class="hidden" required />
+                            <input type="file" @change="handleICFileChange" class="hidden" accept=".jpg,.jpeg,.png,.pdf" required />
+                            <p v-if="createForm.errors.ic_file" class="text-[10px] text-rose-500 font-bold uppercase mt-2">{{ createForm.errors.ic_file }}</p>
                         </label>
 
                         <label :class="[
                             'relative group p-4 border-2 border-dashed rounded-2xl transition-all cursor-pointer flex items-center gap-4',
-                            createForm.license_file_name 
+                            licenseFileName 
                                 ? 'bg-emerald-50 border-emerald-400 shadow-sm' 
                                 : 'bg-slate-50 border-slate-200 hover:bg-white hover:border-indigo-400'
                         ]">
                             <div :class="[
                                 'h-10 w-10 rounded-xl flex items-center justify-center shadow-sm transition-colors',
-                                createForm.license_file_name ? 'bg-emerald-500 text-white' : 'bg-white text-slate-400 group-hover:text-indigo-600'
+                                licenseFileName ? 'bg-emerald-500 text-white' : 'bg-white text-slate-400 group-hover:text-indigo-600'
                             ]">
-                                <CheckCircle2 v-if="createForm.license_file_name" class="w-5 h-5" />
+                                <CheckCircle2 v-if="licenseFileName" class="w-5 h-5" />
                                 <ShieldCheck v-else class="w-5 h-5" />
                             </div>
                             <div class="flex-1 min-w-0">
-                                <p :class="['text-xs font-black uppercase tracking-tight', createForm.license_file_name ? 'text-emerald-700' : 'text-slate-700']">
+                                <p :class="['text-xs font-black uppercase tracking-tight', licenseFileName ? 'text-emerald-700' : 'text-slate-700']">
                                     License Copy
                                 </p>
                                 <p class="text-[10px] truncate text-slate-500 font-medium">
-                                    {{ createForm.license_file_name || 'Upload License' }}
+                                    {{ licenseFileName || 'Upload License' }}
                                 </p>
                             </div>
-                            <input type="file" @change="handleLicenseDocumentChange" class="hidden" />
+                            <input type="file" @change="handleLicenseDocumentChange" class="hidden" accept=".pdf,.jpg,.jpeg,.png" />
+                            <p v-if="createForm.errors.license_document" class="text-[10px] text-rose-500 font-bold uppercase mt-2">{{ createForm.errors.license_document }}</p>
                         </label>
                     </div>
                 </div>
@@ -537,7 +766,13 @@ const deleteDriver = (id: number) => {
                         </div>
                         <div class="space-y-2">
                             <label class="text-[10px] font-black uppercase tracking-widest text-slate-400 ml-1">License Expiry</label>
-                            <input v-model="editingDriver.license_expiry" type="date" class="w-full px-4 py-3.5 bg-slate-50 border-transparent rounded-2xl shadow-inner text-sm font-bold" />
+                            <input
+                                v-model="editingDriver.license_expiry"
+                                type="date"
+                                :min="minLicenseExpiryDate"
+                                class="w-full px-4 py-3.5 bg-slate-50 border-transparent rounded-2xl shadow-inner text-sm font-bold"
+                            />
+                            <p class="text-[10px] text-slate-500 mt-1">Must be a future date.</p>
                         </div>
                     </div>
                 </div>
@@ -608,6 +843,13 @@ const deleteDriver = (id: number) => {
 
 <style scoped>
 @reference "tailwindcss";
+@keyframes blink-red {
+    0%, 100% { opacity: 1; background-color: rgb(239 68 68 / 0.95); }
+    50% { opacity: 0.75; background-color: rgb(185 28 28 / 0.95); }
+}
+.animate-blink-red {
+    animation: blink-red 1.2s ease-in-out infinite;
+}
 .modal-input {
     @apply mt-1 block w-full rounded-lg border-slate-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm px-3 py-2 border outline-none transition-colors;
 }

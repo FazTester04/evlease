@@ -40,7 +40,7 @@ class Document extends Model
     }
     public function getFileUrlAttribute()
     {
-        return $this->file_path ? Storage::url($this->file_path) : null;
+        return $this->file_path ? url('/files/' . $this->file_path) : null;
     }
 
     // Optional: an accessor to get the car from the lease payment
