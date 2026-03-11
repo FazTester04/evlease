@@ -1,6 +1,8 @@
 <?php
 
 use Illuminate\Support\Facades\Route;
+use Illuminate\Support\Facades\Storage;
+use Symfony\Component\HttpFoundation\BinaryFileResponse;
 use App\Http\Controllers\DashboardController;
 use App\Http\Controllers\Driver\DashboardController as DriverDashboardController;
 use App\Http\Controllers\PaymentsController;
@@ -13,6 +15,17 @@ use App\Http\Controllers\ChatController;
 
 // Redirect root to the unified login page
 Route::redirect('/', '/login');
+
+// Serve public storage files (works without storage:link; avoids 403 on /storage)
+Route::get('/files/{path}', function (string $path): BinaryFileResponse {
+    $path = str_replace(['..', '\\'], ['', '/'], $path);
+    if (! Storage::disk('public')->exists($path)) {
+        abort(404);
+    }
+    return response()->file(Storage::disk('public')->path($path), [
+        'Content-Type' => Storage::disk('public')->mimeType($path),
+    ]);
+})->where('path', '.*')->name('storage.serve');
 
 // Protected routes for authenticated users
 Route::middleware('auth')->group(function () {

@@ -36,11 +36,16 @@ class LeaseController extends Controller
             })
             ->get();
 
-        // Drivers with role driver AND no ongoing lease (active, paused, or pending)
+        // Drivers with valid license and no ongoing lease — unavailable (expired/no license) cannot be assigned
         $availableDrivers = User::where('role', UserRole::DRIVER)
             ->whereDoesntHave('leases', function ($q) {
                 $q->whereIn('status', ['active', 'paused', 'pending']);
             })
+            ->whereHas('documents', function ($q) {
+                $q->where('type', 'driver_license')
+                    ->where('expiry_date', '>', now()->toDateString());
+            })
+            ->orderBy('name')
             ->get();
 
         return Inertia::render('leases', [
@@ -78,6 +83,15 @@ class LeaseController extends Controller
                  ->whereIn('status', ['active', 'paused', 'pending'])
                  ->exists()) {
             return back()->withErrors(['driver_id' => 'This driver already has an active, paused, or pending lease.']);
+        }
+
+        // Driver must have a valid (non-expired) license to be assigned a lease
+        $driverHasValidLicense = \App\Models\Document::where('driver_id', $validated['driver_id'])
+            ->where('type', 'driver_license')
+            ->where('expiry_date', '>', now()->toDateString())
+            ->exists();
+        if (! $driverHasValidLicense) {
+            return back()->withErrors(['driver_id' => 'This driver does not have a valid license. License must be renewed before they can be assigned a lease.']);
         }
 
         $lease = Lease::create($validated);

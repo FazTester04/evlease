@@ -21,6 +21,13 @@ const props = defineProps<{
 }>();
 
 // ---------- Helpers ----------
+// License expiry must be a future date (min = tomorrow for date input)
+const minLicenseExpiryDate = (() => {
+    const d = new Date();
+    d.setDate(d.getDate() + 1);
+    return d.toISOString().slice(0, 10);
+})();
+
 const formatDate = (date: string | null) => {
     if (!date) return '—';
     return new Date(date).toLocaleDateString('en-GB', {
@@ -62,6 +69,7 @@ const createForm = useForm({
     phone: '',
     date_of_birth: '',
     address: '',
+    remarks: '',
     driver_license: '',
     license_expiry: '',
     license_document: null as File | null,
@@ -249,6 +257,29 @@ const deleteDriver = (id: number) => {
         router.delete(`/admin/drivers/${id}`, { preserveScroll: true });
     }
 };
+
+// Notification: show after add driver, dismissible and auto-hide
+const showSuccessNotification = ref(false);
+const successMessage = ref('');
+let successNotificationTimeout: ReturnType<typeof setTimeout>;
+
+function showDriverAddedNotification(message: string) {
+    successMessage.value = message;
+    showSuccessNotification.value = true;
+    clearTimeout(successNotificationTimeout);
+    successNotificationTimeout = setTimeout(() => {
+        showSuccessNotification.value = false;
+    }, 6000);
+}
+
+function dismissSuccessNotification() {
+    showSuccessNotification.value = false;
+    clearTimeout(successNotificationTimeout);
+}
+
+watch(() => page.props.flash?.success, (msg) => {
+    if (msg) showDriverAddedNotification(msg);
+}, { immediate: true });
 </script>
 
 <template>
@@ -321,8 +352,9 @@ const deleteDriver = (id: number) => {
                                               driver.license_document.status === 'expired' ? 'blink-red' : ''
                                           ]">
                                         {{ formatDate(driver.license_document.expiry_date) }}
+                                        <span v-if="driver.license_document.status === 'expired'" class="ml-1">(Expired)</span>
                                     </span>
-                                    <span v-else class="text-slate-400">—</span>
+                                    <span v-else class="inline-flex items-center px-2.5 py-1 rounded-full text-xs font-medium animate-blink-red bg-red-500/90 text-white">No license / Expired</span>
                                 </td>
                                 <td class="px-6 py-4 align-top">
                                     <div v-if="driver.active_lease" class="text-sm">
@@ -331,7 +363,6 @@ const deleteDriver = (id: number) => {
                                         </Link>
                                         <div class="text-xs text-slate-500 mt-1">Since {{ formatDate(driver.active_lease.start_date) }}</div>
                                     </div>
-                                    <span v-else class="text-slate-400 text-sm">No active lease</span>
                                 </td>
                                 <td class="px-6 py-4 align-top">
                                     <span class="inline-flex items-center px-2.5 py-1 rounded-full text-xs font-medium capitalize"
@@ -343,7 +374,7 @@ const deleteDriver = (id: number) => {
         {{ driver.status.replace('_', ' ') }}
                                     </span>
                                 </td>
-                                <td class="px-6 py-4 align-middle text-right">
+                            <td class="px-6 py-4 align-middle text-right">
                                     <div class="flex items-center justify-end gap-1">
                                         <div class="w-px h-6 bg-slate-200 mx-1"></div>
                                         <button @click="editDriver(driver)" 
@@ -824,6 +855,13 @@ const deleteDriver = (id: number) => {
 
 <style scoped>
 @reference "tailwindcss";
+@keyframes blink-red {
+    0%, 100% { opacity: 1; background-color: rgb(239 68 68 / 0.95); }
+    50% { opacity: 0.75; background-color: rgb(185 28 28 / 0.95); }
+}
+.animate-blink-red {
+    animation: blink-red 1.2s ease-in-out infinite;
+}
 .modal-input {
     @apply mt-1 block w-full rounded-lg border-slate-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm px-3 py-2 border outline-none transition-colors;
 }

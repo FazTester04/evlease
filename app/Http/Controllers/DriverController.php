@@ -17,97 +17,93 @@ class DriverController extends Controller
     /**
      * Display a listing of drivers.
      */
-    public function index(Request $request)
-    {
-        $drivers = User::where('role', UserRole::DRIVER)
-            ->when($request->search, function ($query, $search) {
-                $query->where(function ($q) use ($search) {
-                    $q->where('name', 'like', "%{$search}%")
-                      ->orWhere('email', 'like', "%{$search}%")
-                      ->orWhere('driver_license', 'like', "%{$search}%")
-                      ->orWhere('ic_number', 'like', "%{$search}%");
-                });
-            })
-            ->when($request->availability, function ($query, $availability) {
-                // Filter by the manual status column
-                $query->where('status', $availability);
-            })
-            ->with(['leases' => function ($q) {
-                $q->with('car')->where('status', 'active');
-            }, 'documents'])
-            ->orderBy('created_at', 'desc')
-            ->get()
-            ->map(function ($driver) {
-                $mapDoc = function($type) use ($driver) {
-                    $doc = $driver->documents->where('type', $type)->first();
-                    if ($doc) {
-                        $doc->file_url = $doc->file_path ? asset('storage/' . $doc->file_path) : null;
-                    }
-                    return $doc;
-                };
-
-                $driver->license_document = $mapDoc('driver_license');
-                $driver->ic_document = $mapDoc('ic');
-                $driver->active_lease = $driver->leases->first();
-
-                return $driver;
+public function index(Request $request)
+{
+    $drivers = User::where('role', UserRole::DRIVER)
+        // 1. Wrap search in a grouped where clause
+        ->when($request->search, function ($query, $search) {
+            $query->where(function ($q) use ($search) {
+                $q->where('name', 'like', "%{$search}%")
+                  ->orWhere('email', 'like', "%{$search}%")
+                  ->orWhere('driver_license', 'like', "%{$search}%")
+                  ->orWhere('ic_number', 'like', "%{$search}%");
             });
+        })
+        // 2. Eager Load relationships
+        ->with(['leases' => function ($q) {
+            $q->where('status', 'active')->with('car');
+        }, 'documents']) 
+        ->orderBy('created_at', 'desc')
+        ->get()
+        // 3. Transform for Vue
+        ->map(function ($driver) {
+            // Helper to get document by type and attach URL
+            $mapDoc = function($type) use ($driver) {
+                $doc = $driver->documents->where('type', $type)->first();
+                if ($doc) {
+                    $doc->file_url = $doc->file_path ? asset('storage/' . $doc->file_path) : null;
+                }
+                return $doc;
+            };
 
-        return Inertia::render('drivers', [
-            'drivers' => $drivers,
-            'filters' => $request->only(['search', 'availability']),
-        ]);
-    }
+            $driver->license_document = $mapDoc('driver_license');
+            $driver->ic_document = $mapDoc('ic');
+            $driver->active_lease = $driver->leases->first();
+            
+            return $driver;
+        });
+
+    return Inertia::render('drivers', [
+        'drivers' => $drivers,
+        'filters' => $request->only('search'),
+    ]);
+}
 
     /**
      * Store a newly created driver.
      */
-    public function store(Request $request)
-    {
-        $validated = $request->validate([
-            'name'              => 'required|string|max:255',
-            'email'             => 'required|email|unique:users,email',
-            'password'          => 'required|string|min:8',
-            'phone'             => ['required', 'string', 'regex:/^\+60\d{9}$/'],
-            'date_of_birth'     => 'required|date|before:today',
-            'address'           => 'required|string',
-            'driver_license'    => 'required|string|max:50',
-            'ic_number'         => ['required', 'string', 'digits:12', 'unique:users,ic_number'],
-            'ic_file'           => 'required|file|mimes:jpg,jpeg,png,pdf|max:2048',
-            'license_expiry'    => 'required|date|after:today',
-            'license_document'  => 'required|file|mimes:pdf,jpg,jpeg,png|max:2048',
-            // Driver status – must match frontend values
-            'status'            => 'required|in:available,on_lease,unavailable',
-            'remarks'           => 'nullable|string',
-        ]);
+public function store(Request $request)
+{
+     
+    $validated = $request->validate([
+        'name'              => 'required|string|max:255',
+        'email'             => 'nullable|email|unique:users,email',
+        'password'          => 'required|string|min:8',
+        'phone'             => 'nullable|string|max:20',
+        'date_of_birth'     => 'nullable|date',
+        'address'           => 'nullable|string',
+        'driver_license'    => 'nullable|string|max:50',
+        'ic_number'         => 'required|string|unique:users',
+        'ic_file'           => 'required|file|mimes:jpg,jpeg,png,pdf|max:2048',
+        'license_expiry'    => 'nullable|date',
+        'license_document'  => 'nullable|file|mimes:pdf,jpg,jpeg,png|max:2048',
+    ]);
 
-        // Create the user
-        $user = User::create([
-            'name'            => $validated['name'],
-            'email'           => $validated['email'],
-            'password'        => Hash::make($validated['password']),
-            'role'            => UserRole::DRIVER,
-            'is_active'       => true,
-            'phone'           => $validated['phone'],
-            'date_of_birth'   => $validated['date_of_birth'],
-            'address'         => $validated['address'],
-            'driver_license'  => $validated['driver_license'],
-            'ic_number'       => $validated['ic_number'],
-            'status'          => $validated['status'],
-            'remarks'         => $validated['remarks'] ?? null,
-        ]);
+    // Create the user
+    $user = User::create([
+        'name'            => $validated['name'],
+        'email'           => $validated['email'] ?? null,
+        'password'        => Hash::make($validated['password']),
+        'role'            => UserRole::DRIVER,
+        'is_active'       => true,
+        'phone'           => $validated['phone'] ?? null,
+        'date_of_birth'   => $validated['date_of_birth'] ?? null,
+        'address'         => $validated['address'] ?? null,
+        'driver_license'  => $validated['driver_license'] ?? null,
+        'ic_number'       => $validated['ic_number'],
+    ]);
 
-        // Store IC document
-        if ($request->hasFile('ic_file')) {
-            $icPath = $request->file('ic_file')->store('driver-ics', 'public');
-            Document::create([
-                'driver_id' => $user->id,
-                'name'      => 'Identification Card',
-                'type'      => 'ic',
-                'file_path' => $icPath,
-                'status'    => 'valid',
-            ]);
-        }
+    // Store IC document (always, since required)
+    if ($request->hasFile('ic_file')) {
+        $icPath = $request->file('ic_file')->store('driver-ics', 'public');
+        Document::create([
+            'driver_id' => $user->id,
+            'name'      => 'Identification Card',
+            'type'      => 'ic',
+            'file_path' => $icPath,
+            'status'    => 'valid',
+        ]);
+    }
 
         // Store license document
         if ($request->hasFile('license_document')) {
@@ -115,18 +111,18 @@ class DriverController extends Controller
             $expiry = Carbon::parse($validated['license_expiry']);
             $status = $this->calculateDocumentStatus($expiry);
 
-            Document::create([
-                'driver_id'    => $user->id,
-                'name'         => 'Driver License',
-                'type'         => 'driver_license',
-                'file_path'    => $licensePath,
-                'expiry_date'  => $validated['license_expiry'],
-                'status'       => $status,
-            ]);
-        }
-
-        return redirect()->back()->with('success', 'Driver created successfully.');
+        Document::create([
+            'driver_id'    => $user->id,
+            'name'         => 'Driver License',
+            'type'         => 'driver_license',
+            'file_path'    => $licensePath,
+            'expiry_date'  => $validated['license_expiry'],
+            'status'       => $status,
+        ]);
     }
+
+    return redirect()->back()->with('success', 'Driver created successfully.');
+}
 
     /**
      * Update the specified driver.
@@ -139,29 +135,22 @@ class DriverController extends Controller
 
         $validated = $request->validate([
             'name'              => 'required|string|max:255',
-            'email'             => ['nullable', 'email', Rule::unique('users')->ignore($driver->id)],
-            'phone'             => ['nullable', 'string', 'regex:/^\+60\d{9}$/'],
+            'email'             => 'nullable|email|unique:users,email,' . $driver->id,
+            'phone'             => 'nullable|string|max:20',
             'date_of_birth'     => 'nullable|date',
             'address'           => 'nullable|string',
             'driver_license'    => 'nullable|string|max:50',
-            'ic_number'         => ['nullable', 'string', 'digits:12', Rule::unique('users')->ignore($driver->id)],
             'license_expiry'    => 'nullable|date',
             'license_document'  => 'nullable|file|mimes:pdf,jpg,jpeg,png|max:2048',
-            // Driver status – must match frontend values
-            'status'            => 'required|in:available,on_lease,unavailable',
-            'remarks'           => 'nullable|string',
         ]);
 
         $driver->update([
             'name'           => $validated['name'],
-            'email'          => $validated['email'] ?? $driver->email,
-            'phone'          => $validated['phone'] ?? $driver->phone,
-            'date_of_birth'  => $validated['date_of_birth'] ?? $driver->date_of_birth,
-            'address'        => $validated['address'] ?? $driver->address,
-            'driver_license' => $validated['driver_license'] ?? $driver->driver_license,
-            'ic_number'      => $validated['ic_number'] ?? $driver->ic_number,
-            'status'         => $validated['status'],
-            'remarks'        => $validated['remarks'] ?? $driver->remarks,
+            'email'          => $validated['email'] ?? null,
+            'phone'          => $validated['phone'] ?? null,
+            'date_of_birth'  => $validated['date_of_birth'] ?? null,
+            'address'        => $validated['address'] ?? null,
+            'driver_license' => $validated['driver_license'] ?? null,
         ]);
 
         // Handle license document update
