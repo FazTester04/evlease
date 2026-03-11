@@ -16,7 +16,8 @@ class LeasePayment extends Model
         'paid_date',
         'amount',
         'status',
-        'receipt_path', // <-- add this
+        'receipt_path',
+        'remarks',
     ];
 
     protected $casts = [
@@ -37,16 +38,16 @@ class LeasePayment extends Model
         return $this->hasOne(Document::class, 'lease_payment_id');
     }
 
-  public function getProofUrlAttribute()
-{
-    if ($this->document && $this->document->file_path) {
-        return Storage::url($this->document->file_path);
+    public function getProofUrlAttribute()
+    {
+        if ($this->document && $this->document->file_path) {
+            return Storage::url($this->document->file_path);
+        }
+        if ($this->receipt_path) {
+            return Storage::url($this->receipt_path);
+        }
+        return null;
     }
-    if ($this->receipt_path) {
-        return Storage::url($this->receipt_path);
-    }
-    return null;
-}
     public function payments()
     {
         return $this->hasMany(LeasePayment::class);
@@ -57,7 +58,7 @@ class LeasePayment extends Model
         return $this->belongsTo(User::class, 'driver_id');
     }
     public function lateFees()
-{
-    return $this->hasMany(LateFee::class);
-}
+    {
+        return $this->hasMany(LateFee::class);
+    }
 }

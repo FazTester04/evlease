@@ -27,6 +27,8 @@ class User extends Authenticatable
         'password',
         'role',
         'is_active',
+        'status',        // <-- new
+        'remarks',
         'driver_license',
         'ic_number',
         'phone',

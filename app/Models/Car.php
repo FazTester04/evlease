@@ -31,6 +31,11 @@ class Car extends Model
         'color',
         'remarks',
         'status',
+        'insurance_provider',
+        'insurance_policy_number',
+        'insurance_expiry_date',
+        'road_tax_number',
+        'road_tax_expiry_date',
     ];
 
     /**
@@ -46,6 +51,8 @@ class Car extends Model
         'created_at' => 'datetime',
         'updated_at' => 'datetime',
         'deleted_at' => 'datetime',
+        'insurance_expiry_date' => 'date',
+        'road_tax_expiry_date' => 'date',
     ];
 
     /**
@@ -61,7 +68,7 @@ class Car extends Model
         'service_status',
         'next_payment_due',
         'next_service_date',
-         'active_lease_id',
+        'active_lease_id',
     ];
 
     /**
@@ -126,11 +133,11 @@ class Car extends Model
     {
         return $this->leases()->where('status', 'active')->latest('start_date')->first();
     }
- public function getActiveLeaseIdAttribute()
-{
-    $lease = $this->leases()->where('status', 'active')->first();
-    return $lease?->id;
-}
+    public function getActiveLeaseIdAttribute()
+    {
+        $lease = $this->leases()->where('status', 'active')->first();
+        return $lease?->id;
+    }
     /**
      * Relationship: the driver of the current active lease (via the lease).
      * This can be eager loaded.
@@ -250,7 +257,7 @@ class Car extends Model
             ->whereIn('status', ['overdue'])
             ->orWhere(function ($q) {
                 $q->where('status', 'scheduled')
-                  ->where('scheduled_date', '<', now());
+                    ->where('scheduled_date', '<', now());
             })
             ->exists();
 
