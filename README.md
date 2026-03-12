@@ -23,17 +23,16 @@
 
 | Category | Technology |
 | :--- | :--- |
-| **Frontend** | [e.g., React.js / Next.js] |
-| **Backend** | [e.g., Node.js / Python Fast API] |
-| **Database** | [e.g., PostgreSQL / MongoDB] |
-| **Styling** | [e.g., Tailwind CSS] |
+| **Frontend** | [Vue.js] |
+| **Backend** | [Laravel php] |
+| **Database** | [myPhpAdmin] |
+| **Styling** | [Tailwind CSS] |
 
 ## 🚀 Getting Started
 
 ### Prerequisites
 Make sure you have the following installed:
-* [e.g., Node.js v18+]
-* [e.g., Git]
+* [Php v8,3]
 
 ### Installation
 
