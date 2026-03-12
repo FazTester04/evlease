@@ -44,6 +44,7 @@ Make sure you have the following installed:
 
 
 2. **Install dependency**
+   ```bash
     composer install
     npm install
     create .env file
