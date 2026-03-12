@@ -17,7 +17,7 @@
 * **⚡ Smart Inventory:** Real-time tracking of available EV models with battery specs and range data.
 * **📋 Digital Leasing:** Seamless digital application process for new lease agreements.
 * **📊 Charging Insights:** (Planned) Integration with charging networks to monitor vehicle health.
-* **📱 Responsive Design:** Fully optimized for desktop and mobile management.
+
 
 ## 🛠 Tech Stack
 
