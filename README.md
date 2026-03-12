@@ -54,5 +54,6 @@ Make sure you have the following installed:
     php artisan key generate
     
 3. **Run the project**
+   ```bash
    php artisan serve
    npm run dev
